@@ -2,6 +2,7 @@ package com.webbox.app
 
 import android.annotation.SuppressLint
 import android.content.Context
+import android.content.Intent
 import android.app.DownloadManager
 import android.net.Uri
 import android.os.Bundle
@@ -50,6 +51,7 @@ import org.json.JSONArray
 import org.json.JSONObject
 import java.net.URI
 import java.util.UUID
+import kotlinx.coroutines.delay
 
 private data class Site(
     val id: String = UUID.randomUUID().toString(),
@@ -130,6 +132,24 @@ private class AdElementBridge(private val onBlock: (String, String) -> Unit) {
 }
 
 private data class MediaResource(val url: String, val type: String, val title: String)
+private data class DownloadItem(val id: Long, val title: String, val status: Int, val downloaded: Long, val total: Long)
+
+private fun loadDownloadItems(context: Context): List<DownloadItem> {
+    val manager = context.getSystemService(Context.DOWNLOAD_SERVICE) as DownloadManager
+    val cursor = manager.query(DownloadManager.Query()) ?: return emptyList()
+    return cursor.use { c ->
+        val result = mutableListOf<DownloadItem>()
+        val idCol = c.getColumnIndex(DownloadManager.COLUMN_ID)
+        val titleCol = c.getColumnIndex(DownloadManager.COLUMN_TITLE)
+        val statusCol = c.getColumnIndex(DownloadManager.COLUMN_STATUS)
+        val downloadedCol = c.getColumnIndex(DownloadManager.COLUMN_BYTES_DOWNLOADED_SO_FAR)
+        val totalCol = c.getColumnIndex(DownloadManager.COLUMN_TOTAL_SIZE_BYTES)
+        while (c.moveToNext()) {
+            result.add(DownloadItem(c.getLong(idCol), c.getString(titleCol) ?: "下载文件", c.getInt(statusCol), c.getLong(downloadedCol), c.getLong(totalCol)))
+        }
+        result.sortedByDescending { it.id }
+    }
+}
 
 private class MediaSniffBridge(private val onFound: (String, String, String) -> Unit) {
     @JavascriptInterface fun found(url: String, type: String, title: String) { onFound(url, type, title) }
@@ -776,6 +796,8 @@ private fun BrowserScreen(site: Site, adBlockEnabled: Boolean, customAdDomains: 
     var manualPickEnabled by remember(site.url) { mutableStateOf(false) }
     var mediaResources by remember(site.url) { mutableStateOf(emptyList<MediaResource>()) }
     var mediaDialogVisible by remember { mutableStateOf(false) }
+    var downloadDialogVisible by remember { mutableStateOf(false) }
+    var downloadItems by remember { mutableStateOf(loadDownloadItems(context)) }
     val manualPickModeState = rememberUpdatedState(manualPickEnabled)
     val context = LocalContext.current
     val elementBridge = remember(site.id) { AdElementBridge { host, selector ->
@@ -812,6 +834,13 @@ private fun BrowserScreen(site: Site, adBlockEnabled: Boolean, customAdDomains: 
         }
     }
 
+    LaunchedEffect(downloadDialogVisible) {
+        while (downloadDialogVisible) {
+            downloadItems = loadDownloadItems(context)
+            delay(1000)
+        }
+    }
+
     Column(Modifier.fillMaxSize()) {
         TopAppBar(
             title = { Text(site.name, maxLines = 1) },
@@ -829,6 +858,9 @@ private fun BrowserScreen(site: Site, adBlockEnabled: Boolean, customAdDomains: 
                 }
                 IconButton(onClick = { manualPickEnabled = !manualPickEnabled; webView?.evaluateJavascript("window.__webboxSetPickMode && window.__webboxSetPickMode($manualPickEnabled)", null); Toast.makeText(context, if (manualPickEnabled) "点选屏蔽已开启：点击网页广告区域" else "已退出点选屏蔽", Toast.LENGTH_SHORT).show() }) {
                     Icon(Icons.Default.Block, contentDescription = "手动点选屏蔽", tint = if (manualPickEnabled) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurface)
+                }
+                IconButton(onClick = { downloadItems = loadDownloadItems(context); downloadDialogVisible = true }) {
+                    Icon(Icons.Default.Download, contentDescription = "下载管理")
                 }
                 IconButton(onClick = { mediaDialogVisible = true; webView?.evaluateJavascript("window.__webboxScanMedia && window.__webboxScanMedia()", null) }) {
                     Icon(Icons.Default.VideoLibrary, contentDescription = "资源嗅探")
@@ -919,6 +951,52 @@ private fun BrowserScreen(site: Site, adBlockEnabled: Boolean, customAdDomains: 
                 }
             },
             update = { view -> webView = view }
+        )
+    }
+    if (downloadDialogVisible) {
+        AlertDialog(
+            onDismissRequest = { downloadDialogVisible = false },
+            title = { Text("下载管理（${downloadItems.size}）") },
+            text = {
+                if (downloadItems.isEmpty()) Text("还没有下载任务", style = MaterialTheme.typography.bodyMedium)
+                else LazyColumn(Modifier.heightIn(max = 400.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                    items(downloadItems, key = { it.id }) { item ->
+                        Column(Modifier.fillMaxWidth()) {
+                            Text(item.title, style = MaterialTheme.typography.titleSmall, maxLines = 2)
+                            val statusText = when (item.status) {
+                                DownloadManager.STATUS_PENDING -> "等待下载"
+                                DownloadManager.STATUS_RUNNING -> "正在下载"
+                                DownloadManager.STATUS_PAUSED -> "已暂停"
+                                DownloadManager.STATUS_SUCCESSFUL -> "下载完成"
+                                DownloadManager.STATUS_FAILED -> "下载失败"
+                                else -> "状态未知"
+                            }
+                            Text(statusText + if (item.total > 0) " · ${android.text.format.Formatter.formatFileSize(context, item.downloaded)} / ${android.text.format.Formatter.formatFileSize(context, item.total)}" else "", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.secondary)
+                            if (item.status == DownloadManager.STATUS_RUNNING || item.status == DownloadManager.STATUS_PENDING || item.status == DownloadManager.STATUS_PAUSED) {
+                                if (item.total > 0) LinearProgressIndicator(progress = { (item.downloaded.toFloat() / item.total).coerceIn(0f, 1f) }, modifier = Modifier.fillMaxWidth())
+                                else LinearProgressIndicator(modifier = Modifier.fillMaxWidth())
+                            }
+                            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
+                                if (item.status == DownloadManager.STATUS_SUCCESSFUL) TextButton(onClick = {
+                                    try {
+                                        val uri = (context.getSystemService(Context.DOWNLOAD_SERVICE) as DownloadManager).getUriForDownloadedFile(item.id)
+                                        if (uri != null) {
+                                            val intent = Intent(Intent.ACTION_VIEW).setDataAndType(uri, "*/*").addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+                                            context.startActivity(Intent.createChooser(intent, "打开下载文件"))
+                                        } else Toast.makeText(context, "找不到已下载文件", Toast.LENGTH_SHORT).show()
+                                    } catch (e: Exception) { Toast.makeText(context, "没有可打开此文件的应用", Toast.LENGTH_SHORT).show() }
+                                }) { Text("打开") }
+                                TextButton(onClick = {
+                                    (context.getSystemService(Context.DOWNLOAD_SERVICE) as DownloadManager).remove(item.id)
+                                    downloadItems = loadDownloadItems(context)
+                                }) { Text("移除") }
+                            }
+                            Divider()
+                        }
+                    }
+                }
+            },
+            confirmButton = { TextButton(onClick = { downloadDialogVisible = false }) { Text("关闭") } }
         )
     }
     if (mediaDialogVisible) {
