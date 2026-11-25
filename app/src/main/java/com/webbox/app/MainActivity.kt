@@ -80,6 +80,8 @@ private const val KEY_AD_ELEMENT_RULES = "ad_element_rules"
 private const val KEY_WALLPAPER_URI = "wallpaper_uri"
 private const val KEY_THEME_INDEX = "theme_index"
 private const val KEY_ICON_STYLE = "icon_style"
+private const val KEY_ADULT_SITES = "adult_sites"
+private const val KEY_ADULT_PIN_HASH = "adult_pin_hash"
 private val adDomains = setOf("doubleclick.net", "googlesyndication.com", "googleadservices.com", "adnxs.com", "taboola.com", "outbrain.com", "criteo.com", "amazon-adsystem.com", "scorecardresearch.com", "adsafeprotected.com", "adservice.google.com")
 private val categories = listOf("全部", "常用", "工具", "购物", "学习", "其他")
 private val themeColors = listOf(Color(0xFF3157D5), Color(0xFF16856B), Color(0xFF8B50B5), Color(0xFFE07835))
@@ -225,6 +227,7 @@ private fun WebBoxApp() {
     var mainDownloadsVisible by remember { mutableStateOf(false) }
     var toolsVisible by remember { mutableStateOf(false) }
     var vpnVisible by remember { mutableStateOf(false) }
+    var adultZoneVisible by remember { mutableStateOf(false) }
     var adBlockEnabled by remember { mutableStateOf(context.getSharedPreferences(PREFS, Context.MODE_PRIVATE).getBoolean(KEY_AD_BLOCK, true)) }
     var forceCustomPlayer by remember { mutableStateOf(context.getSharedPreferences(PREFS, Context.MODE_PRIVATE).getBoolean(KEY_FORCE_CUSTOM_PLAYER, false)) }
     var customAdDomains by remember { mutableStateOf(loadCustomAdDomains(context)) }
@@ -312,6 +315,11 @@ private fun WebBoxApp() {
                         singleLine = true,
                         shape = RoundedCornerShape(18.dp)
                     )
+                    OutlinedButton(onClick = { adultZoneVisible = true }, modifier = Modifier.fillMaxWidth().padding(bottom = 10.dp)) {
+                        Icon(Icons.Default.Lock, contentDescription = null)
+                        Spacer(Modifier.width(8.dp))
+                        Text("成人影视专区")
+                    }
                     Card(
                         modifier = Modifier.fillMaxWidth().padding(top = 0.dp, bottom = 14.dp),
                         shape = RoundedCornerShape(26.dp),
@@ -389,6 +397,10 @@ private fun WebBoxApp() {
                 }
                 }
             }
+        }
+
+        if (adultZoneVisible) {
+            AdultZoneDialog(onOpen = { site -> browserSite = Site(name = site.first, url = site.second, category = "其他") }, onDismiss = { adultZoneVisible = false })
         }
 
         if (editorVisible) {
@@ -1263,4 +1275,96 @@ if (mediaDialogVisible) {
             dismissButton = { TextButton(onClick = { mediaResources = emptyList(); webView?.evaluateJavascript("window.__webboxScanMedia && window.__webboxScanMedia()", null) }) { Text("重新扫描") } }
         )
     }
+}
+
+private fun adultPinHash(pin: String): String {
+    val bytes = java.security.MessageDigest.getInstance("SHA-256").digest(pin.toByteArray(Charsets.UTF_8))
+    return bytes.joinToString("") { "%02x".format(it) }
+}
+
+@Composable
+private fun AdultZoneDialog(onOpen: (Pair<String, String>) -> Unit, onDismiss: () -> Unit) {
+    val context = LocalContext.current
+    val prefs = remember { context.getSharedPreferences(PREFS, Context.MODE_PRIVATE) }
+    var hash by remember { mutableStateOf(prefs.getString(KEY_ADULT_PIN_HASH, null)) }
+    var unlocked by remember { mutableStateOf(false) }
+    var pin by remember { mutableStateOf("") }
+    var error by remember { mutableStateOf("") }
+    var sites by remember {
+        mutableStateOf(run {
+            val raw = prefs.getString(KEY_ADULT_SITES, null)
+            if (raw == null) listOf(
+                "Pornhub" to "https://www.pornhub.com/",
+                "XVideos" to "https://www.xvideos.com/",
+                "XNXX" to "https://www.xnxx.com/",
+                "xHamster" to "https://xhamster.com/",
+                "YouPorn" to "https://www.youporn.com/",
+                "RedTube" to "https://www.redtube.com/",
+                "Chaturbate" to "https://chaturbate.com/",
+                "Stripchat" to "https://stripchat.com/",
+                "OnlyFans" to "https://onlyfans.com/"
+            ) else try {
+                val a = JSONArray(raw)
+                (0 until a.length()).map { i -> a.getJSONObject(i).optString("name") to a.getJSONObject(i).optString("url") }
+            } catch (_: Exception) { emptyList() }
+        })
+    }
+    var name by remember { mutableStateOf("") }
+    var url by remember { mutableStateOf("") }
+    var adding by remember { mutableStateOf(false) }
+    fun save(next: List<Pair<String, String>>) {
+        sites = next
+        val a = JSONArray()
+        next.forEach { (n, u) -> a.put(JSONObject().put("name", n).put("url", u)) }
+        prefs.edit().putString(KEY_ADULT_SITES, a.toString()).apply()
+    }
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text(if (unlocked) "成人影视专区" else "成人专区访问锁") },
+        text = {
+            if (!unlocked) Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                Text(if (hash == null) "首次进入请设置 4–12 位数字 PIN。" else "请输入 PIN 解锁。")
+                OutlinedTextField(pin, { pin = it.filter(Char::isDigit).take(12); error = "" }, label = { Text("PIN") }, keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.NumberPassword), singleLine = true)
+                if (error.isNotBlank()) Text(error, color = MaterialTheme.colorScheme.error)
+            } else if (adding) Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                OutlinedTextField(name, { name = it }, label = { Text("网站名称") }, singleLine = true)
+                OutlinedTextField(url, { url = it }, label = { Text("网址（https://）") }, singleLine = true)
+            } else Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                Text("仅供成年人使用。请遵守所在地年龄验证规定及网站条款。")
+                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
+                    TextButton(onClick = { name = ""; url = ""; adding = true }) { Text("添加网站") }
+                }
+                LazyColumn(Modifier.heightIn(max = 380.dp)) {
+                    items(sites) { site ->
+                        Row(Modifier.fillMaxWidth().padding(vertical = 5.dp), verticalAlignment = Alignment.CenterVertically) {
+                            Column(Modifier.weight(1f).clickable { onOpen(site) }) {
+                                Text(site.first, style = MaterialTheme.typography.titleMedium)
+                                Text(site.second, style = MaterialTheme.typography.bodySmall, maxLines = 1)
+                            }
+                            TextButton(onClick = { onOpen(site) }) { Text("打开") }
+                            IconButton(onClick = { save(sites.filterNot { it == site }) }) { Icon(Icons.Default.Delete, contentDescription = "删除") }
+                        }
+                        Divider()
+                    }
+                }
+            }
+        },
+        confirmButton = {
+            if (!unlocked) TextButton(onClick = {
+                if (pin.length !in 4..12) error = "PIN 需要 4–12 位数字"
+                else if (hash == null) {
+                    val h = adultPinHash(pin); prefs.edit().putString(KEY_ADULT_PIN_HASH, h).apply(); hash = h; unlocked = true; pin = ""
+                } else if (adultPinHash(pin) == hash) { unlocked = true; pin = "" } else error = "PIN 不正确"
+            }) { Text(if (hash == null) "设置并进入" else "解锁") }
+            else if (adding) TextButton(onClick = {
+                if (name.isNotBlank() && url.startsWith("https://")) { save(sites + (name.trim() to url.trim())); adding = false }
+            }) { Text("保存") }
+            else TextButton(onClick = onDismiss) { Text("关闭") }
+        },
+        dismissButton = {
+            if (adding) TextButton(onClick = { adding = false }) { Text("取消") }
+            else if (unlocked) TextButton(onClick = { unlocked = false; pin = "" }) { Text("锁定") }
+            else TextButton(onClick = onDismiss) { Text("取消") }
+        }
+    )
 }
