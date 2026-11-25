@@ -125,8 +125,8 @@ private fun saveElementRule(context: Context, host: String, selector: String) {
     prefs.edit().putString(KEY_AD_ELEMENT_RULES, root.toString()).apply()
 }
 
-private class AdElementBridge(private val onBlock: (String) -> Unit) {
-    @JavascriptInterface fun block(selector: String) { onBlock(selector) }
+private class AdElementBridge(private val onBlock: (String, String) -> Unit) {
+    @JavascriptInterface fun block(host: String, selector: String) { onBlock(host, selector) }
 }
 
 private fun normalizeUrl(value: String): String {
@@ -769,9 +769,8 @@ private fun BrowserScreen(site: Site, adBlockEnabled: Boolean, customAdDomains: 
     var address by remember(site.url) { mutableStateOf(site.url) }
     var manualPickEnabled by remember(site.url) { mutableStateOf(false) }
     val context = LocalContext.current
-    val currentHost = remember(site.url) { Uri.parse(site.url).host.orEmpty().lowercase() }
-    val elementBridge = remember(currentHost) { AdElementBridge { selector ->
-        saveElementRule(context, currentHost, selector)
+    val elementBridge = remember(site.id) { AdElementBridge { host, selector ->
+        if (host.isNotBlank() && selector.isNotBlank()) saveElementRule(context, host.lowercase(), selector)
         Toast.makeText(context, "已屏蔽此广告区域", Toast.LENGTH_SHORT).show()
     } }
 
@@ -866,7 +865,7 @@ private fun BrowserScreen(site: Site, adBlockEnabled: Boolean, customAdDomains: 
                             if (!url.isNullOrBlank()) address = url
                             val host = Uri.parse(url ?: site.url).host.orEmpty().lowercase()
                             val rulesJson = JSONArray(loadElementRules(context, host)).toString()
-                            val setupScript = """(function(){if(window.__webboxPickerInstalled)return;window.__webboxPickerInstalled=true;window.__webboxPickMode=false;function makeSelector(el){if(el.id)return "#"+CSS.escape(el.id);var parts=[];while(el&&el.nodeType===1&&el!==document.body){var part=el.tagName.toLowerCase();if(el.className&&typeof el.className==="string"){var cls=el.className.trim().split(/\\s+/).filter(Boolean)[0];if(cls)part+="."+CSS.escape(cls)}var parent=el.parentElement;if(parent){var same=Array.from(parent.children).filter(x=>x.tagName===el.tagName);if(same.length>1)part+=":nth-of-type("+(same.indexOf(el)+1)+")"}parts.unshift(part);el=parent;if(el&&el.id){parts.unshift("#"+CSS.escape(el.id));break}}return parts.join(" > ")}document.addEventListener("click",function(e){if(!window.__webboxPickMode)return;var el=e.target;if(!el||el===document.body)return;e.preventDefault();e.stopPropagation();e.stopImmediatePropagation();var selector=makeSelector(el);el.style.setProperty("display","none","important");if(window.WebBoxBridge)window.WebBoxBridge.block(selector)},true);window.__webboxSetPickMode=function(v){window.__webboxPickMode=!!v;document.documentElement.style.cursor=v?"crosshair":""};window.__webboxApplyRules=function(rules){(rules||[]).forEach(function(sel){try{document.querySelectorAll(sel).forEach(function(el){el.style.setProperty("display","none","important")})}catch(e){}})}})();window.__webboxApplyRules($rulesJson);window.__webboxSetPickMode($manualPickEnabled);"""
+                            val setupScript = """(function(){if(window.__webboxPickerInstalled)return;window.__webboxPickerInstalled=true;window.__webboxPickMode=false;function makeSelector(el){if(el.id)return "#"+CSS.escape(el.id);var parts=[];while(el&&el.nodeType===1&&el!==document.body){var part=el.tagName.toLowerCase();if(el.className&&typeof el.className==="string"){var cls=el.className.trim().split(/\\s+/).filter(Boolean)[0];if(cls)part+="."+CSS.escape(cls)}var parent=el.parentElement;if(parent){var same=Array.from(parent.children).filter(x=>x.tagName===el.tagName);if(same.length>1)part+=":nth-of-type("+(same.indexOf(el)+1)+")"}parts.unshift(part);el=parent;if(el&&el.id){parts.unshift("#"+CSS.escape(el.id));break}}return parts.join(" > ")}document.addEventListener("click",function(e){if(!window.__webboxPickMode)return;var el=e.target;if(!el||el===document.body)return;e.preventDefault();e.stopPropagation();e.stopImmediatePropagation();var selector=makeSelector(el);el.style.setProperty("display","none","important");if(window.WebBoxBridge)window.WebBoxBridge.block(location.hostname,selector)},true);window.__webboxSetPickMode=function(v){window.__webboxPickMode=!!v;document.documentElement.style.cursor=v?"crosshair":""};window.__webboxApplyRules=function(rules){(rules||[]).forEach(function(sel){try{document.querySelectorAll(sel).forEach(function(el){el.style.setProperty("display","none","important")})}catch(e){}})}})();window.__webboxApplyRules($rulesJson);window.__webboxSetPickMode($manualPickEnabled);"""
                             view?.evaluateJavascript(setupScript, null)
                             super.onPageFinished(view, url)
                         }
