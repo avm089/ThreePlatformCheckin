@@ -1065,10 +1065,25 @@ private fun BrowserScreen(site: Site, adBlockEnabled: Boolean, customAdDomains: 
                     }
                     webViewClient = object : WebViewClient() {
                         override fun shouldInterceptRequest(view: WebView?, request: WebResourceRequest?): WebResourceResponse? {
-                            val host = request?.url?.host?.lowercase().orEmpty()
+                            val requestedUri = request?.url
+                            val host = requestedUri?.host?.lowercase().orEmpty()
                             val blocked = adBlockEnabled && (adDomains + customAdDomains).any { host == it || host.endsWith(".$it") }
-                            return if (blocked) WebResourceResponse("text/plain", "utf-8", ByteArrayInputStream(ByteArray(0)))
-                            else super.shouldInterceptRequest(view, request)
+                            if (blocked) return WebResourceResponse("text/plain", "utf-8", ByteArrayInputStream(ByteArray(0)))
+
+                            // Observe media requests from the whole WebView, including iframe players.
+                            // Only surface playable files/manifests; do not collect DRM license calls or tiny HLS segments.
+                            val requestedUrl = requestedUri?.toString().orEmpty()
+                            val path = requestedUri?.lastPathSegment?.lowercase().orEmpty()
+                            val mediaKind = when {
+                                path.endsWith(".m3u8") -> "网络嗅探 · HLS/M3U8"
+                                path.endsWith(".mpd") -> "网络嗅探 · DASH/MPD"
+                                path.endsWith(".mp4") || path.endsWith(".m4v") || path.endsWith(".webm") || path.endsWith(".mov") -> "网络嗅探 · 视频直链"
+                                else -> null
+                            }
+                            if (mediaKind != null && requestedUrl.startsWith("https://") || mediaKind != null && requestedUrl.startsWith("http://")) {
+                                mediaBridge.found(requestedUrl, mediaKind, "网页网络媒体")
+                            }
+                            return super.shouldInterceptRequest(view, request)
                         }
                         override fun onPageFinished(view: WebView?, url: String?) {
                             if (!url.isNullOrBlank()) address = url
@@ -1078,7 +1093,7 @@ private fun BrowserScreen(site: Site, adBlockEnabled: Boolean, customAdDomains: 
                             view?.evaluateJavascript(setupScript, null)
                             val forcePlayerScript = """(function(){if(window.__webboxForcePlayerInstalled)return;window.__webboxForcePlayerInstalled=true;window.__webboxForcePlayerEnabled=${forceCustomPlayer};document.addEventListener("play",function(e){if(!window.__webboxForcePlayerEnabled)return;var v=e.target;if(!v||v.tagName!=="VIDEO")return;var u=v.currentSrc||v.src;if(!u||!/^https?:/i.test(u))return;v.pause();v.style.setProperty("visibility","hidden","important");v.style.setProperty("height","1px","important");if(window.WebBoxMediaBridge)window.WebBoxMediaBridge.found(u,"强制接管视频",document.title||"网页视频");},true);})();"""
                             view?.evaluateJavascript(forcePlayerScript, null)
-                            val mediaScanScript = """(function(){if(window.__webboxMediaScannerInstalled){window.__webboxScanMedia&&window.__webboxScanMedia();return;}window.__webboxMediaScannerInstalled=true;var seen={};function send(u,t){try{if(!u||/^(blob:|data:|javascript:)/i.test(u))return;u=new URL(u,location.href).href;if(!/^https?:/i.test(u)||seen[u])return;if(!/\\.(mp4|webm|m4v|mov|mp3|m4a|aac|ogg|wav|pdf|zip|rar|7z|apk|exe|dmg|docx?|xlsx?|pptx?|csv|txt|jpg|jpeg|png|gif|webp)(?:[?#]|$)/i.test(u)&&t.indexOf('媒体元素')!==0)return;seen[u]=1;if(window.WebBoxMediaBridge)window.WebBoxMediaBridge.found(u,t,document.title||'网页媒体文件');}catch(e){}}function scan(){document.querySelectorAll('video,audio').forEach(function(el){send(el.currentSrc||el.src,'媒体元素');el.querySelectorAll('source').forEach(function(s){send(s.src,'媒体元素');});});document.querySelectorAll('a[href]').forEach(function(a){send(a.href,'网页文件链接');});var entries=performance.getEntriesByType('resource')||[];entries.forEach(function(e){send(e.name,'网络媒体资源');});}window.__webboxScanMedia=scan;scan();var observer=new MutationObserver(scan);observer.observe(document.documentElement,{childList:true,subtree:true,attributes:true,attributeFilter:['src']});setTimeout(function(){try{observer.disconnect();}catch(e){}},180000);})();"""
+                            val mediaScanScript = """(function(){if(window.__webboxMediaScannerInstalled){window.__webboxScanMedia&&window.__webboxScanMedia();return;}window.__webboxMediaScannerInstalled=true;var seen={};function send(u,t){try{if(!u||/^(blob:|data:|javascript:)/i.test(u))return;u=new URL(u,location.href).href;if(!/^https?:/i.test(u)||seen[u])return;if(!/\\.(mp4|webm|m4v|mov|m3u8|mpd|mp3|m4a|aac|ogg|wav|pdf|zip|rar|7z|apk|exe|dmg|docx?|xlsx?|pptx?|csv|txt|jpg|jpeg|png|gif|webp)(?:[?#]|$)/i.test(u)&&t.indexOf('媒体元素')!==0)return;seen[u]=1;if(window.WebBoxMediaBridge)window.WebBoxMediaBridge.found(u,t,document.title||'网页媒体文件');}catch(e){}}function scan(){document.querySelectorAll('video,audio').forEach(function(el){send(el.currentSrc||el.src,'媒体元素');el.querySelectorAll('source').forEach(function(s){send(s.src,'媒体元素');});});document.querySelectorAll('a[href]').forEach(function(a){send(a.href,'网页文件链接');});var entries=performance.getEntriesByType('resource')||[];entries.forEach(function(e){send(e.name,'网络媒体资源');});}window.__webboxScanMedia=scan;scan();var observer=new MutationObserver(scan);observer.observe(document.documentElement,{childList:true,subtree:true,attributes:true,attributeFilter:['src']});setTimeout(function(){try{observer.disconnect();}catch(e){}},180000);})();"""
                             view?.evaluateJavascript(mediaScanScript, null)
                             super.onPageFinished(view, url)
                         }
