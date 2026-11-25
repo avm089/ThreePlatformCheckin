@@ -34,6 +34,7 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.foundation.text.KeyboardOptions
@@ -279,11 +280,32 @@ private fun WebBoxApp() {
                     )
                 }
             ) { padding ->
-                Box(Modifier.fillMaxSize()) {
+                Box(Modifier.fillMaxSize().background(Brush.verticalGradient(listOf(Color(0xFFEAF2FF), Color(0xFFF7FAFF), Color(0xFFEFF5FF))))) {
                 wallpaperBitmap?.let { Image(bitmap = it, contentDescription = "自定义壁纸", modifier = Modifier.fillMaxSize(), contentScale = ContentScale.Crop, alpha = 0.34f) }
                 Column(
                     Modifier.fillMaxSize().padding(padding).padding(horizontal = 16.dp)
                 ) {
+                    Card(
+                        modifier = Modifier.fillMaxWidth().padding(top = 8.dp, bottom = 14.dp),
+                        shape = RoundedCornerShape(26.dp),
+                        colors = CardDefaults.cardColors(containerColor = Color.Transparent)
+                    ) {
+                        Row(
+                            modifier = Modifier.fillMaxWidth()
+                                .background(Brush.linearGradient(listOf(Color(0xFF123B9A), Color(0xFF087ED6), Color(0xFF26C6DA))))
+                                .padding(horizontal = 18.dp, vertical = 20.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(5.dp)) {
+                                Text("探索你的网络世界", color = Color.White, style = MaterialTheme.typography.titleLarge)
+                                Text("收藏常用网站 · 一键快速访问", color = Color(0xFFE1F5FE), style = MaterialTheme.typography.bodySmall)
+                                Text("${sites.size} 个已保存网站", color = Color.White.copy(alpha = 0.88f), style = MaterialTheme.typography.labelMedium)
+                            }
+                            Surface(shape = RoundedCornerShape(20.dp), color = Color.White.copy(alpha = 0.16f)) {
+                                Icon(Icons.Default.Language, contentDescription = null, tint = Color.White, modifier = Modifier.padding(14.dp).size(42.dp))
+                            }
+                        }
+                    }
                     OutlinedTextField(
                         value = search,
                         onValueChange = { search = it },
