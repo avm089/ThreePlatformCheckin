@@ -213,7 +213,6 @@ private fun WebBoxApp() {
     var editorVisible by remember { mutableStateOf(false) }
     var editing by remember { mutableStateOf<Site?>(null) }
     var browserSite by remember { mutableStateOf<Site?>(null) }
-    var playerChoiceResource by remember { mutableStateOf<MediaResource?>(null) }
     var aboutVisible by remember { mutableStateOf(false) }
     var mainDownloadsVisible by remember { mutableStateOf(false) }
     var toolsVisible by remember { mutableStateOf(false) }
@@ -884,6 +883,7 @@ private fun BrowserScreen(site: Site, adBlockEnabled: Boolean, customAdDomains: 
     var manualPickEnabled by remember(site.url) { mutableStateOf(false) }
     var mediaResources by remember(site.url) { mutableStateOf(emptyList<MediaResource>()) }
     var mediaDialogVisible by remember { mutableStateOf(false) }
+    var playerChoiceResource by remember { mutableStateOf<MediaResource?>(null) }
     var downloadDialogVisible by remember { mutableStateOf(false) }
     var downloadItems by remember { mutableStateOf(loadDownloadItems(context)) }
     val manualPickModeState = rememberUpdatedState(manualPickEnabled)
