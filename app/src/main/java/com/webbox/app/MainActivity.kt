@@ -901,43 +901,94 @@ private fun loadVpnLinks(context: Context): List<String> {
     } catch (_: Exception) { emptyList() }
 }
 
+private fun expandVpnImport(raw: String): List<String> {
+    val input = raw.trim()
+    if (input.isBlank()) return emptyList()
+    val lines = input.lineSequence().map { it.trim() }.filter { it.isNotBlank() && !it.startsWith("#") }.toList()
+    val expanded = lines.flatMap { line ->
+        when {
+            line.startsWith("{") || line.startsWith("[") -> listOf(line)
+            line.startsWith("http://", true) || line.startsWith("https://", true) -> listOf(line)
+            line.contains("://") -> listOf(line)
+            else -> {
+                val decoded = try {
+                    android.util.Base64.decode(line, android.util.Base64.DEFAULT).toString(Charsets.UTF_8).trim()
+                } catch (_: Exception) { "" }
+                if (decoded.isNotBlank() && decoded != line && (decoded.contains("://") || decoded.startsWith("{") || decoded.startsWith("["))) {
+                    decoded.lineSequence().map { it.trim() }.filter { it.isNotBlank() && !it.startsWith("#") }.toList()
+                } else listOf(line)
+            }
+        }
+    }
+    return expanded.distinct()
+}
+
 @Composable
 private fun VpnLinksDialog(links: List<String>, onSave: (List<String>) -> Unit, onDismiss: () -> Unit) {
-    var newLink by remember { mutableStateOf("") }
+    val context = LocalContext.current
+    var importText by remember { mutableStateOf("") }
+    var filter by remember { mutableStateOf("") }
+    var showHelp by remember { mutableStateOf(false) }
+    val imported = remember(importText) { expandVpnImport(importText) }
+    val visibleLinks = links.filter { it.contains(filter, true) }
     AlertDialog(
         onDismissRequest = onDismiss,
-        title = { Text("我的 VPN 链接") },
+        title = { Text("VPN 配置管理") },
         text = {
             Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                Text("支持粘贴分享链接、Base64 订阅内容或 sing-box JSON 配置。每行可放一个节点。", style = MaterialTheme.typography.bodySmall)
                 OutlinedTextField(
-                    value = newLink,
-                    onValueChange = { newLink = it },
+                    value = importText,
+                    onValueChange = { importText = it },
                     modifier = Modifier.fillMaxWidth(),
-                    label = { Text("粘贴 VPN 配置/订阅链接") },
-                    placeholder = { Text("https://… 或协议分享链接") },
-                    minLines = 2
+                    label = { Text("导入配置或订阅") },
+                    placeholder = { Text("vless://…、vmess://…、trojan://…、https://订阅地址或 JSON") },
+                    minLines = 3,
+                    maxLines = 6
                 )
-                Button(
-                    onClick = {
-                        val value = newLink.trim()
-                        if (value.isNotBlank() && value !in links) onSave(links + value)
-                        newLink = ""
-                    },
-                    enabled = newLink.isNotBlank(),
-                    modifier = Modifier.fillMaxWidth()
-                ) { Text("保存链接") }
-                if (links.isEmpty()) Text("暂时没有 VPN 链接", style = MaterialTheme.typography.bodySmall)
-                else LazyColumn(Modifier.heightIn(max = 180.dp)) {
-                    items(links) { link ->
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Button(
+                        onClick = {
+                            val before = links.size
+                            onSave((links + imported).distinct())
+                            importText = ""
+                            Toast.makeText(context, "已保存新增 ${(links + imported).distinct().size - before} 条", Toast.LENGTH_SHORT).show()
+                        },
+                        enabled = imported.isNotEmpty(),
+                        modifier = Modifier.weight(1f)
+                    ) { Text("导入 ${imported.size} 条") }
+                    OutlinedButton(onClick = { showHelp = !showHelp }) { Text("格式说明") }
+                }
+                if (showHelp) {
+                    Text("分享链接：VLESS / VMess / Trojan / Shadowsocks / Hysteria / Hysteria2 / TUIC / WireGuard / AnyTLS 等。\nJSON：可粘贴 sing-box 配置文件。\n订阅 URL：当前保存地址；自动拉取解析和内核连接仍需接入。", style = MaterialTheme.typography.bodySmall)
+                }
+                Divider()
+                OutlinedTextField(
+                    value = filter,
+                    onValueChange = { filter = it },
+                    modifier = Modifier.fillMaxWidth(),
+                    singleLine = true,
+                    placeholder = { Text("搜索已保存配置") },
+                    leadingIcon = { Icon(Icons.Default.Search, contentDescription = null) }
+                )
+                Text("已保存 ${links.size} 条", style = MaterialTheme.typography.labelMedium)
+                if (visibleLinks.isEmpty()) Text("暂无配置", style = MaterialTheme.typography.bodySmall)
+                else LazyColumn(Modifier.heightIn(max = 220.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                    items(visibleLinks) { link ->
                         Row(verticalAlignment = Alignment.CenterVertically) {
                             Text(link, modifier = Modifier.weight(1f), maxLines = 2, style = MaterialTheme.typography.bodySmall)
+                            IconButton(onClick = {
+                                val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as android.content.ClipboardManager
+                                clipboard.setPrimaryClip(android.content.ClipData.newPlainText("VPN 配置", link))
+                                Toast.makeText(context, "已复制", Toast.LENGTH_SHORT).show()
+                            }) { Icon(Icons.Default.ContentCopy, contentDescription = "复制") }
                             IconButton(onClick = { onSave(links - link) }) {
-                                Icon(Icons.Default.Delete, contentDescription = "删除链接")
+                                Icon(Icons.Default.Delete, contentDescription = "删除配置")
                             }
                         }
                     }
                 }
-                Text("提示：目前此处用于保存和管理链接，尚未集成 VPN 协议内核，因此不会显示虚假的连接状态。", color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodySmall)
+                Text("说明：此版本只完成本地配置导入与管理；尚未启用 VPNService/内核连接，不能实际建立隧道。", color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodySmall)
             }
         },
         confirmButton = { TextButton(onClick = onDismiss) { Text("完成") } }
