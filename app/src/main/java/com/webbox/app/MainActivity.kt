@@ -214,6 +214,7 @@ private fun WebBoxApp() {
     var editing by remember { mutableStateOf<Site?>(null) }
     var browserSite by remember { mutableStateOf<Site?>(null) }
     var aboutVisible by remember { mutableStateOf(false) }
+    var mainDownloadsVisible by remember { mutableStateOf(false) }
     var toolsVisible by remember { mutableStateOf(false) }
     var vpnVisible by remember { mutableStateOf(false) }
     var adBlockEnabled by remember { mutableStateOf(context.getSharedPreferences(PREFS, Context.MODE_PRIVATE).getBoolean(KEY_AD_BLOCK, true)) }
@@ -258,6 +259,9 @@ private fun WebBoxApp() {
                             }
                         },
                         actions = {
+                            IconButton(onClick = { mainDownloadsVisible = true }) {
+                                Icon(Icons.Default.Download, contentDescription = "下载管理")
+                            }
                             IconButton(onClick = { toolsVisible = true }) {
                                 Icon(Icons.Default.Tune, contentDescription = "功能设置")
                             }
@@ -451,6 +455,10 @@ private fun WebBoxApp() {
             )
         }
 
+        if (mainDownloadsVisible) {
+            DownloadManagerDialog(onDismiss = { mainDownloadsVisible = false })
+        }
+
         if (aboutVisible) {
             AlertDialog(
                 onDismissRequest = { aboutVisible = false },
@@ -462,6 +470,77 @@ private fun WebBoxApp() {
             )
         }
     }
+}
+
+@Composable
+private fun DownloadManagerDialog(onDismiss: () -> Unit) {
+    val context = LocalContext.current
+    var downloadItems by remember { mutableStateOf(loadDownloadItems(context)) }
+
+    LaunchedEffect(Unit) {
+        while (true) {
+            downloadItems = loadDownloadItems(context)
+            delay(1000)
+        }
+    }
+
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("下载管理（${downloadItems.size}）") },
+        text = {
+            if (downloadItems.isEmpty()) {
+                Text("还没有下载任务", style = MaterialTheme.typography.bodyMedium)
+            } else {
+                LazyColumn(Modifier.heightIn(max = 440.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                    items(downloadItems, key = { it.id }) { item ->
+                        Column(Modifier.fillMaxWidth()) {
+                            Text(item.title, style = MaterialTheme.typography.titleSmall, maxLines = 2)
+                            val statusText = when (item.status) {
+                                DownloadManager.STATUS_PENDING -> "等待下载"
+                                DownloadManager.STATUS_RUNNING -> "正在下载"
+                                DownloadManager.STATUS_PAUSED -> "已暂停"
+                                DownloadManager.STATUS_SUCCESSFUL -> "下载完成"
+                                DownloadManager.STATUS_FAILED -> "下载失败"
+                                else -> "状态未知"
+                            }
+                            Text(
+                                statusText + if (item.total > 0) " · ${android.text.format.Formatter.formatFileSize(context, item.downloaded)} / ${android.text.format.Formatter.formatFileSize(context, item.total)}" else "",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.secondary
+                            )
+                            if (item.status == DownloadManager.STATUS_RUNNING || item.status == DownloadManager.STATUS_PENDING || item.status == DownloadManager.STATUS_PAUSED) {
+                                if (item.total > 0) LinearProgressIndicator(
+                                    progress = { (item.downloaded.toFloat() / item.total).coerceIn(0f, 1f) },
+                                    modifier = Modifier.fillMaxWidth()
+                                ) else LinearProgressIndicator(modifier = Modifier.fillMaxWidth())
+                            }
+                            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
+                                if (item.status == DownloadManager.STATUS_SUCCESSFUL) {
+                                    TextButton(onClick = {
+                                        try {
+                                            val uri = (context.getSystemService(Context.DOWNLOAD_SERVICE) as DownloadManager).getUriForDownloadedFile(item.id)
+                                            if (uri != null) {
+                                                val intent = Intent(Intent.ACTION_VIEW).setDataAndType(uri, "*/*").addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+                                                context.startActivity(Intent.createChooser(intent, "打开下载文件"))
+                                            } else Toast.makeText(context, "找不到已下载文件", Toast.LENGTH_SHORT).show()
+                                        } catch (_: Exception) {
+                                            Toast.makeText(context, "没有可打开此文件的应用", Toast.LENGTH_SHORT).show()
+                                        }
+                                    }) { Text("打开") }
+                                }
+                                TextButton(onClick = {
+                                    (context.getSystemService(Context.DOWNLOAD_SERVICE) as DownloadManager).remove(item.id)
+                                    downloadItems = loadDownloadItems(context)
+                                }) { Text("移除") }
+                            }
+                            Divider()
+                        }
+                    }
+                }
+            }
+        },
+        confirmButton = { TextButton(onClick = onDismiss) { Text("关闭") } }
+    )
 }
 
 @Composable
