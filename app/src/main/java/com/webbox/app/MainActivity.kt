@@ -168,22 +168,26 @@ private fun isValidUrl(value: String): Boolean = try {
 
 private fun loadSites(context: Context): List<Site> {
     val raw = context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
-        .getString(KEY_SITES, null) ?: return listOf(
-        Site(name = "小黑盒", url = "https://www.xiaoheihe.cn", category = "常用"),
-        Site(name = "快手", url = "https://www.kuaishou.com", category = "常用"),
-        Site(name = "抖音", url = "https://www.douyin.com", category = "常用")
-    )
+        .getString(KEY_SITES, null) ?: return emptyList()
     return try {
         val array = JSONArray(raw)
-        (0 until array.length()).map { index ->
+        (0 until array.length()).mapNotNull { index ->
             val item = array.getJSONObject(index)
+            val name = item.optString("name").trim()
+            val url = item.optString("url").trim().lowercase()
+            // Remove the three bundled shortcuts from existing saved lists as well.
+            if (name in setOf("小黑盒", "快手", "抖音") ||
+                url.contains("xiaoheihe.cn") || url.contains("kuaishou.com") || url.contains("douyin.com")
+            ) return@mapNotNull null
             Site(
                 id = item.optString("id", UUID.randomUUID().toString()),
-                name = item.optString("name"),
+                name = name,
                 url = item.optString("url"),
                 category = item.optString("category", "其他"),
                 favorite = item.optBoolean("favorite", false)
             )
+        }.also { cleaned ->
+            if (cleaned.size != array.length()) saveSites(context, cleaned)
         }
     } catch (_: Exception) { emptyList() }
 }
