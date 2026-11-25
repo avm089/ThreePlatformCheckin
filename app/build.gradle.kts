@@ -12,8 +12,8 @@ android {
         applicationId = "com.webbox.app"
         minSdk = 23
         targetSdk = 35
-        versionCode = 9
-        versionName = "1.6.0"
+        versionCode = 10
+        versionName = "1.6.1"
     }
 
     compileOptions {
@@ -38,6 +38,7 @@ dependencies {
     implementation("androidx.lifecycle:lifecycle-runtime-ktx:2.8.7")
     implementation("androidx.webkit:webkit:1.12.1")
     implementation("androidx.media3:media3-exoplayer:1.5.1")
+    implementation("androidx.media3:media3-exoplayer-hls:1.5.1")
     implementation("androidx.media3:media3-ui:1.5.1")
     debugImplementation("androidx.compose.ui:ui-tooling")
 }
