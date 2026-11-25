@@ -129,6 +129,12 @@ private class AdElementBridge(private val onBlock: (String, String) -> Unit) {
     @JavascriptInterface fun block(host: String, selector: String) { onBlock(host, selector) }
 }
 
+private data class MediaResource(val url: String, val type: String, val title: String)
+
+private class MediaSniffBridge(private val onFound: (String, String, String) -> Unit) {
+    @JavascriptInterface fun found(url: String, type: String, title: String) { onFound(url, type, title) }
+}
+
 private fun normalizeUrl(value: String): String {
     val text = value.trim()
     return if (text.startsWith("https://", true) || text.startsWith("http://", true)) text
@@ -768,12 +774,43 @@ private fun BrowserScreen(site: Site, adBlockEnabled: Boolean, customAdDomains: 
     var webView by remember { mutableStateOf<WebView?>(null) }
     var address by remember(site.url) { mutableStateOf(site.url) }
     var manualPickEnabled by remember(site.url) { mutableStateOf(false) }
+    var mediaResources by remember(site.url) { mutableStateOf(emptyList<MediaResource>()) }
+    var mediaDialogVisible by remember { mutableStateOf(false) }
     val manualPickModeState = rememberUpdatedState(manualPickEnabled)
     val context = LocalContext.current
     val elementBridge = remember(site.id) { AdElementBridge { host, selector ->
         if (host.isNotBlank() && selector.isNotBlank()) saveElementRule(context, host.lowercase(), selector)
         Toast.makeText(context, "已屏蔽此广告区域", Toast.LENGTH_SHORT).show()
     } }
+    val mediaBridge = remember(site.id) { MediaSniffBridge { url, type, title ->
+        android.os.Handler(android.os.Looper.getMainLooper()).post {
+            val parsed = Uri.parse(url)
+            if ((parsed.scheme == "http" || parsed.scheme == "https") && !parsed.host.isNullOrBlank()) {
+                val item = MediaResource(url, type, title.ifBlank { "网页媒体文件" })
+                mediaResources = (mediaResources.filterNot { it.url == url } + item).takeLast(100)
+            }
+        }
+    } }
+
+    fun downloadMedia(item: MediaResource) {
+        try {
+            val fileName = URLUtil.guessFileName(item.url, null, null)
+            val request = DownloadManager.Request(Uri.parse(item.url)).apply {
+                setTitle(fileName)
+                setDescription("WebBox 正在下载媒体文件")
+                setNotificationVisibility(DownloadManager.Request.VISIBILITY_VISIBLE_NOTIFY_COMPLETED)
+                setDestinationInExternalPublicDir(Environment.DIRECTORY_DOWNLOADS, fileName)
+                addRequestHeader("User-Agent", webView?.settings?.userAgentString ?: "Mozilla/5.0")
+                if (address.startsWith("http")) addRequestHeader("Referer", address)
+                CookieManager.getInstance().getCookie(item.url)?.let { addRequestHeader("Cookie", it) }
+            }
+            val manager = context.getSystemService(Context.DOWNLOAD_SERVICE) as DownloadManager
+            manager.enqueue(request)
+            Toast.makeText(context, "已加入下载：$fileName", Toast.LENGTH_SHORT).show()
+        } catch (e: Exception) {
+            Toast.makeText(context, "下载失败：${e.message}", Toast.LENGTH_LONG).show()
+        }
+    }
 
     Column(Modifier.fillMaxSize()) {
         TopAppBar(
@@ -792,6 +829,9 @@ private fun BrowserScreen(site: Site, adBlockEnabled: Boolean, customAdDomains: 
                 }
                 IconButton(onClick = { manualPickEnabled = !manualPickEnabled; webView?.evaluateJavascript("window.__webboxSetPickMode && window.__webboxSetPickMode($manualPickEnabled)", null); Toast.makeText(context, if (manualPickEnabled) "点选屏蔽已开启：点击网页广告区域" else "已退出点选屏蔽", Toast.LENGTH_SHORT).show() }) {
                     Icon(Icons.Default.Block, contentDescription = "手动点选屏蔽", tint = if (manualPickEnabled) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurface)
+                }
+                IconButton(onClick = { mediaDialogVisible = true; webView?.evaluateJavascript("window.__webboxScanMedia && window.__webboxScanMedia()", null) }) {
+                    Icon(Icons.Default.VideoLibrary, contentDescription = "资源嗅探")
                 }
                 IconButton(onClick = { webView?.reload() }) {
                     Icon(Icons.Default.Refresh, contentDescription = "刷新")
@@ -828,6 +868,7 @@ private fun BrowserScreen(site: Site, adBlockEnabled: Boolean, customAdDomains: 
                 WebView(context).apply {
                     webView = this
                     addJavascriptInterface(elementBridge, "WebBoxBridge")
+                    addJavascriptInterface(mediaBridge, "WebBoxMediaBridge")
                     settings.javaScriptEnabled = true
                     settings.domStorageEnabled = true
                     settings.loadsImagesAutomatically = true
@@ -868,6 +909,8 @@ private fun BrowserScreen(site: Site, adBlockEnabled: Boolean, customAdDomains: 
                             val rulesJson = JSONArray(loadElementRules(context, host)).toString()
                             val setupScript = """(function(){if(window.__webboxPickerInstalled)return;window.__webboxPickerInstalled=true;window.__webboxPickMode=false;function makeSelector(el){if(el.id)return "#"+CSS.escape(el.id);var parts=[];while(el&&el.nodeType===1&&el!==document.body){var part=el.tagName.toLowerCase();if(el.className&&typeof el.className==="string"){var cls=el.className.trim().split(/\\s+/).filter(Boolean)[0];if(cls)part+="."+CSS.escape(cls)}var parent=el.parentElement;if(parent){var same=Array.from(parent.children).filter(x=>x.tagName===el.tagName);if(same.length>1)part+=":nth-of-type("+(same.indexOf(el)+1)+")"}parts.unshift(part);el=parent;if(el&&el.id){parts.unshift("#"+CSS.escape(el.id));break}}return parts.join(" > ")}document.addEventListener("click",function(e){if(!window.__webboxPickMode)return;var el=e.target;if(!el||el===document.body)return;e.preventDefault();e.stopPropagation();e.stopImmediatePropagation();var selector=makeSelector(el);el.style.setProperty("display","none","important");if(window.WebBoxBridge)window.WebBoxBridge.block(location.hostname,selector)},true);window.__webboxSetPickMode=function(v){window.__webboxPickMode=!!v;document.documentElement.style.cursor=v?"crosshair":""};window.__webboxApplyRules=function(rules){(rules||[]).forEach(function(sel){try{document.querySelectorAll(sel).forEach(function(el){el.style.setProperty("display","none","important")})}catch(e){}})}})();window.__webboxApplyRules($rulesJson);window.__webboxSetPickMode(${manualPickModeState.value});"""
                             view?.evaluateJavascript(setupScript, null)
+                            val mediaScanScript = """(function(){if(window.__webboxMediaScannerInstalled){window.__webboxScanMedia&&window.__webboxScanMedia();return;}window.__webboxMediaScannerInstalled=true;var seen={};function send(u,t){try{if(!u||/^(blob:|data:|javascript:)/i.test(u))return;u=new URL(u,location.href).href;if(!/^https?:/i.test(u)||seen[u])return;if(!/\\.(mp4|webm|m4v|mov|mp3|m4a|aac|ogg|wav)(?:[?#]|$)/i.test(u)&&t.indexOf('媒体元素')!==0)return;seen[u]=1;if(window.WebBoxMediaBridge)window.WebBoxMediaBridge.found(u,t,document.title||'网页媒体文件');}catch(e){}}function scan(){document.querySelectorAll('video,audio').forEach(function(el){send(el.currentSrc||el.src,'媒体元素');el.querySelectorAll('source').forEach(function(s){send(s.src,'媒体元素');});});var entries=performance.getEntriesByType('resource')||[];entries.forEach(function(e){send(e.name,'网络媒体资源');});}window.__webboxScanMedia=scan;scan();var observer=new MutationObserver(scan);observer.observe(document.documentElement,{childList:true,subtree:true,attributes:true,attributeFilter:['src']});setTimeout(function(){try{observer.disconnect();}catch(e){}},180000);})();"""
+                            view?.evaluateJavascript(mediaScanScript, null)
                             super.onPageFinished(view, url)
                         }
                     }
@@ -876,6 +919,36 @@ private fun BrowserScreen(site: Site, adBlockEnabled: Boolean, customAdDomains: 
                 }
             },
             update = { view -> webView = view }
+        )
+    }
+    if (mediaDialogVisible) {
+        AlertDialog(
+            onDismissRequest = { mediaDialogVisible = false },
+            title = { Text("网页资源嗅探（${mediaResources.size}）") },
+            text = {
+                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Text("扫描当前网页可访问的媒体地址。优先支持 MP4、WebM、MP3 等直链；加密流、受保护内容和 blob 临时地址可能无法下载。", style = MaterialTheme.typography.bodySmall)
+                    if (mediaResources.isEmpty()) {
+                        Text("暂未发现可直接下载的媒体。请先播放网页视频，再打开资源嗅探。", style = MaterialTheme.typography.bodyMedium)
+                    } else {
+                        LazyColumn(Modifier.heightIn(max = 360.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                            items(mediaResources, key = { it.url }) { item ->
+                                Column(Modifier.fillMaxWidth()) {
+                                    Text(item.title, style = MaterialTheme.typography.titleSmall, maxLines = 1)
+                                    Text(item.type, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.secondary)
+                                    Text(item.url, style = MaterialTheme.typography.bodySmall, maxLines = 2)
+                                    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
+                                        TextButton(onClick = { downloadMedia(item) }) { Text("下载此资源") }
+                                    }
+                                    Divider()
+                                }
+                            }
+                        }
+                    }
+                }
+            },
+            confirmButton = { TextButton(onClick = { mediaDialogVisible = false }) { Text("关闭") } },
+            dismissButton = { TextButton(onClick = { mediaResources = emptyList(); webView?.evaluateJavascript("window.__webboxScanMedia && window.__webboxScanMedia()", null) }) { Text("重新扫描") } }
         )
     }
 }
