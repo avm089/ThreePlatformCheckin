@@ -13,12 +13,17 @@ import android.webkit.WebResourceRequest
 import android.webkit.WebResourceResponse
 import android.webkit.WebView
 import android.webkit.WebViewClient
+import android.webkit.JavascriptInterface
+import android.graphics.BitmapFactory
 import android.webkit.URLUtil
 import android.widget.Toast
 import java.io.ByteArrayInputStream
 import androidx.activity.ComponentActivity
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.activity.compose.BackHandler
 import androidx.activity.compose.setContent
+import androidx.compose.foundation.Image
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.*
@@ -26,6 +31,10 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.asImageBitmap
+import androidx.compose.ui.layout.ContentScale
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.*
@@ -62,8 +71,13 @@ private const val KEY_SITES = "sites"
 private const val KEY_AD_BLOCK = "ad_block"
 private const val KEY_CUSTOM_AD_DOMAINS = "custom_ad_domains"
 private const val KEY_VPN_LINKS = "vpn_links"
+private const val KEY_AD_ELEMENT_RULES = "ad_element_rules"
+private const val KEY_WALLPAPER_URI = "wallpaper_uri"
+private const val KEY_THEME_INDEX = "theme_index"
+private const val KEY_ICON_STYLE = "icon_style"
 private val adDomains = setOf("doubleclick.net", "googlesyndication.com", "googleadservices.com", "adnxs.com", "taboola.com", "outbrain.com", "criteo.com", "amazon-adsystem.com", "scorecardresearch.com", "adsafeprotected.com", "adservice.google.com")
 private val categories = listOf("全部", "常用", "工具", "购物", "学习", "其他")
+private val themeColors = listOf(Color(0xFF3157D5), Color(0xFF16856B), Color(0xFF8B50B5), Color(0xFFE07835))
 
 private fun loadCustomAdDomains(context: Context): List<String> {
     val raw = context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
@@ -92,6 +106,27 @@ private fun saveCustomAdDomains(context: Context, domains: List<String>) {
     domains.distinct().forEach { array.put(it) }
     context.getSharedPreferences(PREFS, Context.MODE_PRIVATE).edit()
         .putString(KEY_CUSTOM_AD_DOMAINS, array.toString()).apply()
+}
+
+private fun loadElementRules(context: Context, host: String): List<String> {
+    val raw = context.getSharedPreferences(PREFS, Context.MODE_PRIVATE).getString(KEY_AD_ELEMENT_RULES, null) ?: return emptyList()
+    return try {
+        val array = JSONObject(raw).optJSONArray(host) ?: return emptyList()
+        (0 until array.length()).map { array.optString(it) }.filter { it.isNotBlank() }.distinct()
+    } catch (_: Exception) { emptyList() }
+}
+
+private fun saveElementRule(context: Context, host: String, selector: String) {
+    val prefs = context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
+    val root = try { JSONObject(prefs.getString(KEY_AD_ELEMENT_RULES, "{}") ?: "{}") } catch (_: Exception) { JSONObject() }
+    val array = root.optJSONArray(host) ?: JSONArray()
+    if ((0 until array.length()).none { array.optString(it) == selector }) array.put(selector)
+    root.put(host, array)
+    prefs.edit().putString(KEY_AD_ELEMENT_RULES, root.toString()).apply()
+}
+
+private class AdElementBridge(private val onBlock: (String) -> Unit) {
+    @JavascriptInterface fun block(selector: String) { onBlock(selector) }
 }
 
 private fun normalizeUrl(value: String): String {
@@ -158,6 +193,21 @@ private fun WebBoxApp() {
     var adBlockEnabled by remember { mutableStateOf(context.getSharedPreferences(PREFS, Context.MODE_PRIVATE).getBoolean(KEY_AD_BLOCK, true)) }
     var customAdDomains by remember { mutableStateOf(loadCustomAdDomains(context)) }
     var adRulesVisible by remember { mutableStateOf(false) }
+    var appearanceVisible by remember { mutableStateOf(false) }
+    var wallpaperUri by remember { mutableStateOf(context.getSharedPreferences(PREFS, Context.MODE_PRIVATE).getString(KEY_WALLPAPER_URI, null)) }
+    var themeIndex by remember { mutableIntStateOf(context.getSharedPreferences(PREFS, Context.MODE_PRIVATE).getInt(KEY_THEME_INDEX, 0).coerceIn(0, themeColors.lastIndex)) }
+    var iconStyle by remember { mutableIntStateOf(context.getSharedPreferences(PREFS, Context.MODE_PRIVATE).getInt(KEY_ICON_STYLE, 0).coerceIn(0, 2)) }
+    val wallpaperPicker = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
+        if (uri != null) {
+            try { context.contentResolver.takePersistableUriPermission(uri, android.content.Intent.FLAG_GRANT_READ_URI_PERMISSION) } catch (_: Exception) {}
+            wallpaperUri = uri.toString()
+            context.getSharedPreferences(PREFS, Context.MODE_PRIVATE).edit().putString(KEY_WALLPAPER_URI, wallpaperUri).apply()
+        }
+    }
+    val wallpaperBitmap = remember(wallpaperUri) {
+        try { wallpaperUri?.let { context.contentResolver.openInputStream(Uri.parse(it))?.use { stream -> BitmapFactory.decodeStream(stream)?.asImageBitmap() } } }
+        catch (_: Exception) { null }
+    }
     var vpnLinks by remember { mutableStateOf(loadVpnLinks(context)) }
 
     fun updateSites(next: List<Site>) {
@@ -167,11 +217,12 @@ private fun WebBoxApp() {
 
     BackHandler(enabled = browserSite != null) { browserSite = null }
 
-    MaterialTheme(colorScheme = lightColorScheme(primary = androidx.compose.ui.graphics.Color(0xFF3157D5))) {
+    MaterialTheme(colorScheme = lightColorScheme(primary = themeColors[themeIndex])) {
         if (browserSite != null) {
             BrowserScreen(site = browserSite!!, adBlockEnabled = adBlockEnabled, customAdDomains = customAdDomains, onBack = { browserSite = null })
         } else {
             Scaffold(
+                containerColor = Color.Transparent,
                 topBar = {
                     TopAppBar(
                         title = {
@@ -198,6 +249,8 @@ private fun WebBoxApp() {
                     )
                 }
             ) { padding ->
+                Box(Modifier.fillMaxSize()) {
+                wallpaperBitmap?.let { Image(bitmap = it, contentDescription = "自定义壁纸", modifier = Modifier.fillMaxSize(), contentScale = ContentScale.Crop, alpha = 0.34f) }
                 Column(
                     Modifier.fillMaxSize().padding(padding).padding(horizontal = 16.dp)
                 ) {
@@ -241,6 +294,7 @@ private fun WebBoxApp() {
                             items(filtered, key = { it.id }) { site ->
                                 SiteCard(
                                     site = site,
+                                    iconStyle = iconStyle,
                                     onOpen = { browserSite = site },
                                     onFavorite = {
                                         updateSites(sites.map {
@@ -253,6 +307,7 @@ private fun WebBoxApp() {
                             }
                         }
                     }
+                }
                 }
             }
         }
@@ -302,6 +357,11 @@ private fun WebBoxApp() {
                             Spacer(Modifier.width(8.dp))
                             Text("自定义屏蔽规则（${customAdDomains.size}）")
                         }
+                        OutlinedButton(onClick = { toolsVisible = false; appearanceVisible = true }, modifier = Modifier.fillMaxWidth()) {
+                            Icon(Icons.Default.Palette, contentDescription = null)
+                            Spacer(Modifier.width(8.dp))
+                            Text("壁纸与外观图标")
+                        }
                         Divider()
                         Text("隐私防护", style = MaterialTheme.typography.titleMedium)
                         Text("清除内置浏览器 Cookie、缓存和网页存储。", style = MaterialTheme.typography.bodySmall)
@@ -322,6 +382,22 @@ private fun WebBoxApp() {
                     }
                 },
                 confirmButton = { TextButton(onClick = { toolsVisible = false }) { Text("完成") } }
+            )
+        }
+
+        if (appearanceVisible) {
+            AppearanceDialog(
+                wallpaperSet = wallpaperUri != null,
+                themeIndex = themeIndex,
+                iconStyle = iconStyle,
+                onPickWallpaper = { wallpaperPicker.launch(arrayOf("image/*")) },
+                onResetWallpaper = {
+                    wallpaperUri = null
+                    context.getSharedPreferences(PREFS, Context.MODE_PRIVATE).edit().remove(KEY_WALLPAPER_URI).apply()
+                },
+                onThemeChange = { themeIndex = it; context.getSharedPreferences(PREFS, Context.MODE_PRIVATE).edit().putInt(KEY_THEME_INDEX, it).apply() },
+                onIconStyleChange = { iconStyle = it; context.getSharedPreferences(PREFS, Context.MODE_PRIVATE).edit().putInt(KEY_ICON_STYLE, it).apply() },
+                onDismiss = { appearanceVisible = false }
             )
         }
 
@@ -365,6 +441,7 @@ private fun WebBoxApp() {
 @Composable
 private fun SiteCard(
     site: Site,
+    iconStyle: Int,
     onOpen: () -> Unit,
     onFavorite: () -> Unit,
     onEdit: () -> Unit,
@@ -380,7 +457,7 @@ private fun SiteCard(
             verticalAlignment = Alignment.CenterVertically
         ) {
             Surface(
-                shape = RoundedCornerShape(13.dp),
+                shape = when (iconStyle) { 1 -> CircleShape; 2 -> RoundedCornerShape(4.dp); else -> RoundedCornerShape(13.dp) },
                 color = MaterialTheme.colorScheme.primaryContainer
             ) {
                 Box(Modifier.size(46.dp), contentAlignment = Alignment.Center) {
@@ -517,6 +594,54 @@ private fun SiteEditorDialog(
 
 
 @Composable
+private fun AppearanceDialog(
+    wallpaperSet: Boolean,
+    themeIndex: Int,
+    iconStyle: Int,
+    onPickWallpaper: () -> Unit,
+    onResetWallpaper: () -> Unit,
+    onThemeChange: (Int) -> Unit,
+    onIconStyleChange: (Int) -> Unit,
+    onDismiss: () -> Unit
+) {
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("壁纸与外观图标") },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                Text("首页壁纸", style = MaterialTheme.typography.titleSmall)
+                Text(if (wallpaperSet) "已设置自定义壁纸" else "当前使用默认背景", style = MaterialTheme.typography.bodySmall)
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Button(onClick = onPickWallpaper, modifier = Modifier.weight(1f)) { Text("从相册选择") }
+                    OutlinedButton(onClick = onResetWallpaper, enabled = wallpaperSet, modifier = Modifier.weight(1f)) { Text("恢复默认") }
+                }
+                Divider()
+                Text("主题颜色", style = MaterialTheme.typography.titleSmall)
+                Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                    themeColors.forEachIndexed { index, color ->
+                        Surface(
+                            modifier = Modifier.size(38.dp).clickable { onThemeChange(index) },
+                            shape = CircleShape,
+                            color = color,
+                            border = if (themeIndex == index) androidx.compose.foundation.BorderStroke(3.dp, MaterialTheme.colorScheme.onSurface) else null
+                        ) {}
+                    }
+                }
+                Divider()
+                Text("网站图标形状", style = MaterialTheme.typography.titleSmall)
+                listOf("圆角图标", "圆形图标", "方形图标").forEachIndexed { index, label ->
+                    Row(Modifier.fillMaxWidth().clickable { onIconStyleChange(index) }, verticalAlignment = Alignment.CenterVertically) {
+                        RadioButton(selected = iconStyle == index, onClick = { onIconStyleChange(index) })
+                        Text(label)
+                    }
+                }
+            }
+        },
+        confirmButton = { TextButton(onClick = onDismiss) { Text("完成") } }
+    )
+}
+
+@Composable
 private fun AdBlockRulesDialog(
     domains: List<String>,
     onSave: (List<String>) -> Unit,
@@ -642,7 +767,13 @@ private fun BrowserScreen(site: Site, adBlockEnabled: Boolean, customAdDomains: 
     var progress by remember { mutableIntStateOf(0) }
     var webView by remember { mutableStateOf<WebView?>(null) }
     var address by remember(site.url) { mutableStateOf(site.url) }
+    var manualPickEnabled by remember(site.url) { mutableStateOf(false) }
     val context = LocalContext.current
+    val currentHost = remember(site.url) { Uri.parse(site.url).host.orEmpty().lowercase() }
+    val elementBridge = remember(currentHost) { AdElementBridge { selector ->
+        saveElementRule(context, currentHost, selector)
+        Toast.makeText(context, "已屏蔽此广告区域", Toast.LENGTH_SHORT).show()
+    } }
 
     Column(Modifier.fillMaxSize()) {
         TopAppBar(
@@ -658,6 +789,9 @@ private fun BrowserScreen(site: Site, adBlockEnabled: Boolean, customAdDomains: 
                 }
                 IconButton(onClick = { if (webView?.canGoForward() == true) webView?.goForward() }) {
                     Icon(Icons.Default.ArrowForward, contentDescription = "网页前进")
+                }
+                IconButton(onClick = { manualPickEnabled = !manualPickEnabled; webView?.evaluateJavascript("window.__webboxSetPickMode && window.__webboxSetPickMode($manualPickEnabled)", null); Toast.makeText(context, if (manualPickEnabled) "点选屏蔽已开启：点击网页广告区域" else "已退出点选屏蔽", Toast.LENGTH_SHORT).show() }) {
+                    Icon(Icons.Default.Block, contentDescription = "手动点选屏蔽", tint = if (manualPickEnabled) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurface)
                 }
                 IconButton(onClick = { webView?.reload() }) {
                     Icon(Icons.Default.Refresh, contentDescription = "刷新")
@@ -693,6 +827,7 @@ private fun BrowserScreen(site: Site, adBlockEnabled: Boolean, customAdDomains: 
             factory = { context ->
                 WebView(context).apply {
                     webView = this
+                    addJavascriptInterface(elementBridge, "WebBoxBridge")
                     settings.javaScriptEnabled = true
                     settings.domStorageEnabled = true
                     settings.loadsImagesAutomatically = true
@@ -729,6 +864,10 @@ private fun BrowserScreen(site: Site, adBlockEnabled: Boolean, customAdDomains: 
                         }
                         override fun onPageFinished(view: WebView?, url: String?) {
                             if (!url.isNullOrBlank()) address = url
+                            val host = Uri.parse(url ?: site.url).host.orEmpty().lowercase()
+                            val rulesJson = JSONArray(loadElementRules(context, host)).toString()
+                            val setupScript = """(function(){if(window.__webboxPickerInstalled)return;window.__webboxPickerInstalled=true;window.__webboxPickMode=false;function makeSelector(el){if(el.id)return "#"+CSS.escape(el.id);var parts=[];while(el&&el.nodeType===1&&el!==document.body){var part=el.tagName.toLowerCase();if(el.className&&typeof el.className==="string"){var cls=el.className.trim().split(/\\s+/).filter(Boolean)[0];if(cls)part+="."+CSS.escape(cls)}var parent=el.parentElement;if(parent){var same=Array.from(parent.children).filter(x=>x.tagName===el.tagName);if(same.length>1)part+=":nth-of-type("+(same.indexOf(el)+1)+")"}parts.unshift(part);el=parent;if(el&&el.id){parts.unshift("#"+CSS.escape(el.id));break}}return parts.join(" > ")}document.addEventListener("click",function(e){if(!window.__webboxPickMode)return;var el=e.target;if(!el||el===document.body)return;e.preventDefault();e.stopPropagation();e.stopImmediatePropagation();var selector=makeSelector(el);el.style.setProperty("display","none","important");if(window.WebBoxBridge)window.WebBoxBridge.block(selector)},true);window.__webboxSetPickMode=function(v){window.__webboxPickMode=!!v;document.documentElement.style.cursor=v?"crosshair":""};window.__webboxApplyRules=function(rules){(rules||[]).forEach(function(sel){try{document.querySelectorAll(sel).forEach(function(el){el.style.setProperty("display","none","important")})}catch(e){}})}})();window.__webboxApplyRules($rulesJson);window.__webboxSetPickMode($manualPickEnabled);"""
+                            view?.evaluateJavascript(setupScript, null)
                             super.onPageFinished(view, url)
                         }
                     }
