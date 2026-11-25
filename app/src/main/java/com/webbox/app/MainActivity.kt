@@ -1302,6 +1302,13 @@ private fun adultPinHash(pin: String): String {
     return bytes.joinToString("") { "%02x".format(it) }
 }
 
+private data class AdultSite(
+    val name: String,
+    val url: String,
+    val category: String = "视频",
+    val favorite: Boolean = false
+)
+
 @Composable
 private fun AdultZoneDialog(onOpen: (Pair<String, String>) -> Unit, onDismiss: () -> Unit) {
     val context = LocalContext.current
@@ -1310,61 +1317,166 @@ private fun AdultZoneDialog(onOpen: (Pair<String, String>) -> Unit, onDismiss: (
     var unlocked by remember { mutableStateOf(false) }
     var pin by remember { mutableStateOf("") }
     var error by remember { mutableStateOf("") }
+    val defaultSites = listOf(
+        AdultSite("Pornhub", "https://www.pornhub.com/"),
+        AdultSite("XVideos", "https://www.xvideos.com/"),
+        AdultSite("XNXX", "https://www.xnxx.com/"),
+        AdultSite("xHamster", "https://xhamster.com/"),
+        AdultSite("YouPorn", "https://www.youporn.com/"),
+        AdultSite("RedTube", "https://www.redtube.com/"),
+        AdultSite("Chaturbate", "https://chaturbate.com/", "直播"),
+        AdultSite("Stripchat", "https://stripchat.com/", "直播"),
+        AdultSite("OnlyFans", "https://onlyfans.com/", "创作者")
+    )
     var sites by remember {
-        mutableStateOf<List<Pair<String, String>>>(run {
+        mutableStateOf(run {
             val raw = prefs.getString(KEY_ADULT_SITES, null)
-            if (raw == null) listOf(
-                "Pornhub" to "https://www.pornhub.com/",
-                "XVideos" to "https://www.xvideos.com/",
-                "XNXX" to "https://www.xnxx.com/",
-                "xHamster" to "https://xhamster.com/",
-                "YouPorn" to "https://www.youporn.com/",
-                "RedTube" to "https://www.redtube.com/",
-                "Chaturbate" to "https://chaturbate.com/",
-                "Stripchat" to "https://stripchat.com/",
-                "OnlyFans" to "https://onlyfans.com/"
-            ) else try {
+            if (raw == null) defaultSites else try {
                 val a = JSONArray(raw)
-                (0 until a.length()).map { i -> a.getJSONObject(i).optString("name") to a.getJSONObject(i).optString("url") }
-            } catch (_: Exception) { emptyList<Pair<String, String>>() }
+                (0 until a.length()).map { index ->
+                    val item = a.getJSONObject(index)
+                    AdultSite(
+                        item.optString("name"),
+                        item.optString("url"),
+                        item.optString("category", "视频").ifBlank { "视频" },
+                        item.optBoolean("favorite", false)
+                    )
+                }
+            } catch (_: Exception) { defaultSites }
         })
     }
+    var query by remember { mutableStateOf("") }
+    var selectedCategory by remember { mutableStateOf("全部") }
+    var favoritesOnly by remember { mutableStateOf(false) }
+    var editingIndex by remember { mutableIntStateOf(-1) }
     var name by remember { mutableStateOf("") }
     var url by remember { mutableStateOf("") }
-    var adding by remember { mutableStateOf(false) }
-    fun save(next: List<Pair<String, String>>) {
+    var category by remember { mutableStateOf("视频") }
+    var editorError by remember { mutableStateOf("") }
+    val categories = listOf("全部", "视频", "直播", "创作者", "其他")
+
+    fun save(next: List<AdultSite>) {
         sites = next
-        val a = JSONArray()
-        next.forEach { (n, u) -> a.put(JSONObject().put("name", n).put("url", u)) }
-        prefs.edit().putString(KEY_ADULT_SITES, a.toString()).apply()
+        val array = JSONArray()
+        next.forEach { site ->
+            array.put(JSONObject().put("name", site.name).put("url", site.url)
+                .put("category", site.category).put("favorite", site.favorite))
+        }
+        prefs.edit().putString(KEY_ADULT_SITES, array.toString()).apply()
     }
+    fun beginEdit(index: Int) {
+        editingIndex = index
+        val site = sites.getOrNull(index)
+        name = site?.name.orEmpty()
+        url = site?.url.orEmpty()
+        category = site?.category ?: "视频"
+        editorError = ""
+    }
+
     AlertDialog(
         onDismissRequest = onDismiss,
-        title = { Text(if (unlocked) "成人影视专区" else "成人专区访问锁") },
+        title = {
+            Text(when {
+                !unlocked -> "成人专区访问锁"
+                editingIndex >= 0 -> if (editingIndex == sites.size) "添加网站" else "编辑网站"
+                else -> "成人影视专区"
+            })
+        },
         text = {
-            if (!unlocked) Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                Text(if (hash == null) "首次进入请设置 4–12 位数字 PIN。" else "请输入 PIN 解锁。")
-                OutlinedTextField(pin, { pin = it.filter(Char::isDigit).take(12); error = "" }, label = { Text("PIN") }, keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.NumberPassword), singleLine = true)
-                if (error.isNotBlank()) Text(error, color = MaterialTheme.colorScheme.error)
-            } else if (adding) Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                OutlinedTextField(name, { name = it }, label = { Text("网站名称") }, singleLine = true)
-                OutlinedTextField(url, { url = it }, label = { Text("网址（https://）") }, singleLine = true)
-            } else Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                Text("仅供成年人使用。请遵守所在地年龄验证规定及网站条款。")
-                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
-                    TextButton(onClick = { name = ""; url = ""; adding = true }) { Text("添加网站") }
+            if (!unlocked) {
+                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Text(if (hash == null) "首次进入请设置 4–12 位数字 PIN。" else "请输入 PIN 解锁。")
+                    OutlinedTextField(
+                        value = pin,
+                        onValueChange = { pin = it.filter(Char::isDigit).take(12); error = "" },
+                        label = { Text("PIN") },
+                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.NumberPassword),
+                        singleLine = true
+                    )
+                    if (error.isNotBlank()) Text(error, color = MaterialTheme.colorScheme.error)
                 }
-                LazyColumn(Modifier.heightIn(max = 380.dp)) {
-                    items(sites) { site ->
-                        Row(Modifier.fillMaxWidth().padding(vertical = 5.dp), verticalAlignment = Alignment.CenterVertically) {
-                            Column(Modifier.weight(1f).clickable { onOpen(site) }) {
-                                Text(site.first, style = MaterialTheme.typography.titleMedium)
-                                Text(site.second, style = MaterialTheme.typography.bodySmall, maxLines = 1)
-                            }
-                            TextButton(onClick = { onOpen(site) }) { Text("打开") }
-                            IconButton(onClick = { save(sites.filterNot { it == site }) }) { Icon(Icons.Default.Delete, contentDescription = "删除") }
+            } else if (editingIndex >= 0) {
+                Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                    OutlinedTextField(name, { name = it; editorError = "" }, label = { Text("网站名称") }, singleLine = true)
+                    OutlinedTextField(url, { url = it; editorError = "" }, label = { Text("网站网址") }, singleLine = true)
+                    Text("网站分类", style = MaterialTheme.typography.labelMedium)
+                    Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                        categories.filter { it != "全部" }.forEach { item ->
+                            FilterChip(selected = category == item, onClick = { category = item }, label = { Text(item) })
                         }
-                        Divider()
+                    }
+                    if (editorError.isNotBlank()) Text(editorError, color = MaterialTheme.colorScheme.error)
+                }
+            } else {
+                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Text("仅供成年人使用。请遵守所在地年龄验证规定及网站条款。")
+                    OutlinedTextField(
+                        value = query, onValueChange = { query = it },
+                        modifier = Modifier.fillMaxWidth(),
+                        placeholder = { Text("搜索网站名称或网址") },
+                        leadingIcon = { Icon(Icons.Default.Search, contentDescription = null) },
+                        singleLine = true
+                    )
+                    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                        categories.forEach { item ->
+                            FilterChip(selected = selectedCategory == item, onClick = { selectedCategory = item }, label = { Text(item) })
+                        }
+                    }
+                    Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                        FilterChip(
+                            selected = favoritesOnly,
+                            onClick = { favoritesOnly = !favoritesOnly },
+                            label = { Text("★ 只看收藏") }
+                        )
+                        Spacer(Modifier.weight(1f))
+                        TextButton(onClick = { beginEdit(sites.size) }) {
+                            Icon(Icons.Default.Add, contentDescription = null)
+                            Text("添加网站")
+                        }
+                    }
+                    val filtered = sites.withIndex().filter { (_, site) ->
+                        (selectedCategory == "全部" || site.category == selectedCategory) &&
+                            (!favoritesOnly || site.favorite) &&
+                            (query.isBlank() || site.name.contains(query, true) || site.url.contains(query, true))
+                    }
+                    if (filtered.isEmpty()) {
+                        Text("没有匹配的网站，可尝试其他分类或添加网址。", style = MaterialTheme.typography.bodyMedium)
+                    } else {
+                        LazyColumn(Modifier.heightIn(max = 390.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                            items(filtered, key = { it.value.url }) { indexed ->
+                                val site = indexed.value
+                                Card(
+                                    modifier = Modifier.fillMaxWidth(),
+                                    shape = RoundedCornerShape(14.dp),
+                                    colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.55f))
+                                ) {
+                                    Column(Modifier.fillMaxWidth().padding(10.dp)) {
+                                        Row(verticalAlignment = Alignment.CenterVertically) {
+                                            Column(Modifier.weight(1f).clickable { onOpen(site.name to site.url) }) {
+                                                Text(site.name, style = MaterialTheme.typography.titleSmall)
+                                                Text(site.category + " · " + site.url, style = MaterialTheme.typography.bodySmall,
+                                                    color = MaterialTheme.colorScheme.secondary, maxLines = 1)
+                                            }
+                                            IconButton(onClick = {
+                                                save(sites.mapIndexed { index, item ->
+                                                    if (index == indexed.index) item.copy(favorite = !item.favorite) else item
+                                                })
+                                            }) {
+                                                Icon(if (site.favorite) Icons.Default.Star else Icons.Default.StarBorder,
+                                                    contentDescription = "收藏", tint = if (site.favorite) Color(0xFFFFB300) else MaterialTheme.colorScheme.onSurfaceVariant)
+                                            }
+                                        }
+                                        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
+                                            TextButton(onClick = { onOpen(site.name to site.url) }) { Icon(Icons.Default.OpenInBrowser, contentDescription = null); Text("打开") }
+                                            TextButton(onClick = { beginEdit(indexed.index) }) { Icon(Icons.Default.Edit, contentDescription = null); Text("编辑") }
+                                            TextButton(onClick = { save(sites.filterIndexed { index, _ -> index != indexed.index }) }) {
+                                                Icon(Icons.Default.Delete, contentDescription = null); Text("删除")
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        }
                     }
                 }
             }
@@ -1373,17 +1485,30 @@ private fun AdultZoneDialog(onOpen: (Pair<String, String>) -> Unit, onDismiss: (
             if (!unlocked) TextButton(onClick = {
                 if (pin.length !in 4..12) error = "PIN 需要 4–12 位数字"
                 else if (hash == null) {
-                    val h = adultPinHash(pin); prefs.edit().putString(KEY_ADULT_PIN_HASH, h).apply(); hash = h; unlocked = true; pin = ""
-                } else if (adultPinHash(pin) == hash) { unlocked = true; pin = "" } else error = "PIN 不正确"
+                    val h = adultPinHash(pin)
+                    prefs.edit().putString(KEY_ADULT_PIN_HASH, h).apply()
+                    hash = h; unlocked = true; pin = ""
+                } else if (adultPinHash(pin) == hash) {
+                    unlocked = true; pin = ""
+                } else error = "PIN 不正确"
             }) { Text(if (hash == null) "设置并进入" else "解锁") }
-            else if (adding) TextButton(onClick = {
-                if (name.isNotBlank() && url.startsWith("https://")) { save(sites + (name.trim() to url.trim())); adding = false }
+            else if (editingIndex >= 0) TextButton(onClick = {
+                if (name.isBlank()) editorError = "请输入网站名称"
+                else if (!isValidUrl(url)) editorError = "请输入有效的 http 或 https 网址"
+                else {
+                    val item = AdultSite(name.trim(), normalizeUrl(url), category,
+                        sites.getOrNull(editingIndex)?.favorite ?: false)
+                    val next = if (editingIndex == sites.size) sites + item
+                        else sites.mapIndexed { index, old -> if (index == editingIndex) item else old }
+                    save(next)
+                    editingIndex = -1
+                }
             }) { Text("保存") }
             else TextButton(onClick = onDismiss) { Text("关闭") }
         },
         dismissButton = {
-            if (adding) TextButton(onClick = { adding = false }) { Text("取消") }
-            else if (unlocked) TextButton(onClick = { unlocked = false; pin = "" }) { Text("锁定") }
+            if (editingIndex >= 0) TextButton(onClick = { editingIndex = -1 }) { Text("取消") }
+            else if (unlocked) TextButton(onClick = { unlocked = false; pin = ""; query = "" }) { Text("锁定") }
             else TextButton(onClick = onDismiss) { Text("取消") }
         }
     )
