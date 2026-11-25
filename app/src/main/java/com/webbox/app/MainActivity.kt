@@ -259,14 +259,8 @@ private fun WebBoxApp() {
                             }
                         },
                         actions = {
-                            IconButton(onClick = { mainDownloadsVisible = true }) {
-                                Icon(Icons.Default.Download, contentDescription = "下载管理")
-                            }
                             IconButton(onClick = { toolsVisible = true }) {
-                                Icon(Icons.Default.Tune, contentDescription = "功能设置")
-                            }
-                            IconButton(onClick = { aboutVisible = true }) {
-                                Icon(Icons.Default.Info, contentDescription = "关于")
+                                Icon(Icons.Default.Settings, contentDescription = "设置")
                             }
                         }
                     )
@@ -380,6 +374,14 @@ private fun WebBoxApp() {
                             })
                         }
                         OutlinedButton(
+                            onClick = { toolsVisible = false; mainDownloadsVisible = true },
+                            modifier = Modifier.fillMaxWidth()
+                        ) {
+                            Icon(Icons.Default.Download, contentDescription = null)
+                            Spacer(Modifier.width(8.dp))
+                            Text("下载管理")
+                        }
+                        OutlinedButton(
                             onClick = { toolsVisible = false; adRulesVisible = true },
                             modifier = Modifier.fillMaxWidth()
                         ) {
@@ -408,6 +410,11 @@ private fun WebBoxApp() {
                             Icon(Icons.Default.VpnKey, contentDescription = null)
                             Spacer(Modifier.width(8.dp))
                             Text("管理 VPN 链接（${vpnLinks.size}）")
+                        }
+                        OutlinedButton(onClick = { toolsVisible = false; aboutVisible = true }, modifier = Modifier.fillMaxWidth()) {
+                            Icon(Icons.Default.Info, contentDescription = null)
+                            Spacer(Modifier.width(8.dp))
+                            Text("关于 WebBox")
                         }
                     }
                 },
