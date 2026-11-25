@@ -1291,7 +1291,7 @@ private fun AdultZoneDialog(onOpen: (Pair<String, String>) -> Unit, onDismiss: (
     var pin by remember { mutableStateOf("") }
     var error by remember { mutableStateOf("") }
     var sites by remember {
-        mutableStateOf(run {
+        mutableStateOf<List<Pair<String, String>>>(run {
             val raw = prefs.getString(KEY_ADULT_SITES, null)
             if (raw == null) listOf(
                 "Pornhub" to "https://www.pornhub.com/",
@@ -1306,7 +1306,7 @@ private fun AdultZoneDialog(onOpen: (Pair<String, String>) -> Unit, onDismiss: (
             ) else try {
                 val a = JSONArray(raw)
                 (0 until a.length()).map { i -> a.getJSONObject(i).optString("name") to a.getJSONObject(i).optString("url") }
-            } catch (_: Exception) { emptyList() }
+            } catch (_: Exception) { emptyList<Pair<String, String>>() }
         })
     }
     var name by remember { mutableStateOf("") }
