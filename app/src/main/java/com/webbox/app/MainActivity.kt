@@ -790,6 +790,7 @@ private fun VpnLinksDialog(links: List<String>, onSave: (List<String>) -> Unit, 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 private fun BrowserScreen(site: Site, adBlockEnabled: Boolean, customAdDomains: List<String>, onBack: () -> Unit) {
+    val context = LocalContext.current
     var progress by remember { mutableIntStateOf(0) }
     var webView by remember { mutableStateOf<WebView?>(null) }
     var address by remember(site.url) { mutableStateOf(site.url) }
@@ -799,7 +800,6 @@ private fun BrowserScreen(site: Site, adBlockEnabled: Boolean, customAdDomains: 
     var downloadDialogVisible by remember { mutableStateOf(false) }
     var downloadItems by remember { mutableStateOf(loadDownloadItems(context)) }
     val manualPickModeState = rememberUpdatedState(manualPickEnabled)
-    val context = LocalContext.current
     val elementBridge = remember(site.id) { AdElementBridge { host, selector ->
         if (host.isNotBlank() && selector.isNotBlank()) saveElementRule(context, host.lowercase(), selector)
         Toast.makeText(context, "已屏蔽此广告区域", Toast.LENGTH_SHORT).show()
