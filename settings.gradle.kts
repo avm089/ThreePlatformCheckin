@@ -12,7 +12,6 @@ dependencyResolutionManagement {
         maven { url = uri("https://maven-central-eu.storage-download.googleapis.com/maven2/") }
         google()
         mavenCentral()
-        maven("https://jitpack.io")
     }
 }
 rootProject.name = "WebBox"
