@@ -1,11 +1,29 @@
-# 三平台签到助手 Android 工程
+# 网址百宝箱（WebBox）
 
-当前版本提供 Kotlin Android 工程、平台开关、WorkManager 每日后台检查和通知。**尚未接入小黑盒、快手、抖音的真实官方签到接口**，所以目前不能实现真实自动签到，也不会伪造成功结果。
+一款面向 Android 的本地网址收藏与内置浏览器应用。
+
+## 功能
+- 添加、编辑、删除网站
+- 网站分类、搜索、收藏
+- 内置 WebView 浏览器
+- 本地保存数据（SharedPreferences）
+- 默认提供小黑盒、快手、抖音快捷入口
+- GitHub Actions 自动构建 Debug APK
+
+## 构建环境
+- Android Studio / Android Gradle Plugin 8.7.3
+- Gradle 8.9
+- JDK 17
+- compileSdk 35 / minSdk 23
 
 ## 本地构建
-使用 Android Studio 打开项目，等待 Gradle 同步，然后选择 Build > Build Bundle(s) / APK(s) > Build APK(s)。输出通常位于 `app/build/outputs/apk/debug/app-debug.apk`。
+```bash
+gradle :app:assembleDebug
+```
+APK 输出位置：
+`app/build/outputs/apk/debug/app-debug.apk`
 
-## 云端构建
-将整个项目推送到 GitHub 仓库，在 Actions 页面运行 `Build debug APK` 工作流；构建完成后下载名为 `ThreePlatformCheckin-debug-apk` 的 Artifact。
+也可以在 GitHub Actions 页面手动运行 **Build WebBox APK**，下载 `WebBox-debug-apk` 工件。
 
-WorkManager 的 24 小时周期任务不是精确闹钟，系统省电策略可能造成延迟。真实签到必须在核实平台官方接口、授权范围和条款后，逐个平台实现适配器；验证码和安全验证需由用户完成。
+## 安全与隐私
+网站列表保存在本机，不会由本应用上传。内置浏览器会加载用户主动打开的网站；网站自身可能按其隐私政策处理浏览数据。
