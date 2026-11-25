@@ -1103,7 +1103,17 @@ private fun BrowserScreen(site: Site, adBlockEnabled: Boolean, customAdDomains: 
                                     Text(item.type, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.secondary)
                                     Text(item.url, style = MaterialTheme.typography.bodySmall, maxLines = 2)
                                     Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
-                                        TextButton(onClick = { downloadMedia(item) }) { Text("下载此资源") }
+                                        TextButton(onClick = {
+                                            val intent = Intent(context, VideoPlayerActivity::class.java).apply {
+                                                putExtra(VideoPlayerActivity.EXTRA_URL, item.url)
+                                                putExtra(VideoPlayerActivity.EXTRA_TITLE, item.title)
+                                                putExtra(VideoPlayerActivity.EXTRA_REFERER, address)
+                                                putExtra(VideoPlayerActivity.EXTRA_USER_AGENT, webView?.settings?.userAgentString ?: "Mozilla/5.0")
+                                                putExtra(VideoPlayerActivity.EXTRA_COOKIE, CookieManager.getInstance().getCookie(item.url) ?: "")
+                                            }
+                                            context.startActivity(intent)
+                                        }) { Icon(Icons.Default.PlayArrow, contentDescription = null); Text("播放器") }
+                                        TextButton(onClick = { downloadMedia(item) }) { Icon(Icons.Default.Download, contentDescription = null); Text("下载") }
                                     }
                                     Divider()
                                 }
