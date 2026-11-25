@@ -60,9 +60,39 @@ class MainActivity : ComponentActivity() {
 private const val PREFS = "webbox_store"
 private const val KEY_SITES = "sites"
 private const val KEY_AD_BLOCK = "ad_block"
+private const val KEY_CUSTOM_AD_DOMAINS = "custom_ad_domains"
 private const val KEY_VPN_LINKS = "vpn_links"
 private val adDomains = setOf("doubleclick.net", "googlesyndication.com", "googleadservices.com", "adnxs.com", "taboola.com", "outbrain.com", "criteo.com", "amazon-adsystem.com", "scorecardresearch.com", "adsafeprotected.com", "adservice.google.com")
 private val categories = listOf("全部", "常用", "工具", "购物", "学习", "其他")
+
+private fun loadCustomAdDomains(context: Context): List<String> {
+    val raw = context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
+        .getString(KEY_CUSTOM_AD_DOMAINS, null) ?: return emptyList()
+    return try {
+        val array = JSONArray(raw)
+        (0 until array.length()).mapNotNull { normalizeAdDomain(array.optString(it)) }.distinct()
+    } catch (_: Exception) { emptyList() }
+}
+
+private fun normalizeAdDomain(value: String): String? {
+    val input = value.trim().lowercase().removePrefix("https://").removePrefix("http://")
+        .substringBefore('/').substringBefore(':').removePrefix("*.").trimEnd('.')
+    val valid = input.length in 1..253 &&
+        input.split('.').size >= 2 &&
+        input.split('.').all { label ->
+            label.length in 1..63 && label.firstOrNull()?.isLetterOrDigit() == true &&
+                label.lastOrNull()?.isLetterOrDigit() == true &&
+                label.all { it.isLetterOrDigit() || it == '-' }
+        }
+    return if (valid) input else null
+}
+
+private fun saveCustomAdDomains(context: Context, domains: List<String>) {
+    val array = JSONArray()
+    domains.distinct().forEach { array.put(it) }
+    context.getSharedPreferences(PREFS, Context.MODE_PRIVATE).edit()
+        .putString(KEY_CUSTOM_AD_DOMAINS, array.toString()).apply()
+}
 
 private fun normalizeUrl(value: String): String {
     val text = value.trim()
@@ -126,6 +156,8 @@ private fun WebBoxApp() {
     var toolsVisible by remember { mutableStateOf(false) }
     var vpnVisible by remember { mutableStateOf(false) }
     var adBlockEnabled by remember { mutableStateOf(context.getSharedPreferences(PREFS, Context.MODE_PRIVATE).getBoolean(KEY_AD_BLOCK, true)) }
+    var customAdDomains by remember { mutableStateOf(loadCustomAdDomains(context)) }
+    var adRulesVisible by remember { mutableStateOf(false) }
     var vpnLinks by remember { mutableStateOf(loadVpnLinks(context)) }
 
     fun updateSites(next: List<Site>) {
@@ -137,7 +169,7 @@ private fun WebBoxApp() {
 
     MaterialTheme(colorScheme = lightColorScheme(primary = androidx.compose.ui.graphics.Color(0xFF3157D5))) {
         if (browserSite != null) {
-            BrowserScreen(site = browserSite!!, adBlockEnabled = adBlockEnabled, onBack = { browserSite = null })
+            BrowserScreen(site = browserSite!!, adBlockEnabled = adBlockEnabled, customAdDomains = customAdDomains, onBack = { browserSite = null })
         } else {
             Scaffold(
                 topBar = {
@@ -262,6 +294,14 @@ private fun WebBoxApp() {
                                 context.getSharedPreferences(PREFS, Context.MODE_PRIVATE).edit().putBoolean(KEY_AD_BLOCK, it).apply()
                             })
                         }
+                        OutlinedButton(
+                            onClick = { toolsVisible = false; adRulesVisible = true },
+                            modifier = Modifier.fillMaxWidth()
+                        ) {
+                            Icon(Icons.Default.Block, contentDescription = null)
+                            Spacer(Modifier.width(8.dp))
+                            Text("自定义屏蔽规则（${customAdDomains.size}）")
+                        }
                         Divider()
                         Text("隐私防护", style = MaterialTheme.typography.titleMedium)
                         Text("清除内置浏览器 Cookie、缓存和网页存储。", style = MaterialTheme.typography.bodySmall)
@@ -282,6 +322,17 @@ private fun WebBoxApp() {
                     }
                 },
                 confirmButton = { TextButton(onClick = { toolsVisible = false }) { Text("完成") } }
+            )
+        }
+
+        if (adRulesVisible) {
+            AdBlockRulesDialog(
+                domains = customAdDomains,
+                onSave = { next ->
+                    customAdDomains = next
+                    saveCustomAdDomains(context, next)
+                },
+                onDismiss = { adRulesVisible = false }
             )
         }
 
@@ -465,6 +516,74 @@ private fun SiteEditorDialog(
 }
 
 
+@Composable
+private fun AdBlockRulesDialog(
+    domains: List<String>,
+    onSave: (List<String>) -> Unit,
+    onDismiss: () -> Unit
+) {
+    var newDomain by remember { mutableStateOf("") }
+    var error by remember { mutableStateOf("") }
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("自定义广告屏蔽") },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                Text("输入广告域名，例如 ads.example.com。也可以输入完整网址，程序会自动提取域名。", style = MaterialTheme.typography.bodySmall)
+                OutlinedTextField(
+                    value = newDomain,
+                    onValueChange = { newDomain = it; error = "" },
+                    modifier = Modifier.fillMaxWidth(),
+                    singleLine = true,
+                    label = { Text("广告域名或网址") },
+                    placeholder = { Text("ads.example.com") }
+                )
+                Button(
+                    onClick = {
+                        val domain = normalizeAdDomain(newDomain)
+                        when {
+                            domain == null -> error = "域名格式不正确，请检查后重试"
+                            domain in domains -> error = "这个域名已经添加过了"
+                            else -> {
+                                onSave(domains + domain)
+                                newDomain = ""
+                                error = ""
+                            }
+                        }
+                    },
+                    enabled = newDomain.isNotBlank(),
+                    modifier = Modifier.fillMaxWidth()
+                ) { Text("添加屏蔽域名") }
+                if (error.isNotBlank()) {
+                    Text(error, color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodySmall)
+                }
+                Divider()
+                Text("已添加规则（${domains.size}）", style = MaterialTheme.typography.titleSmall)
+                if (domains.isEmpty()) {
+                    Text("还没有自定义规则", style = MaterialTheme.typography.bodySmall)
+                } else {
+                    LazyColumn(Modifier.heightIn(max = 220.dp)) {
+                        items(domains, key = { it }) { domain ->
+                            Row(
+                                modifier = Modifier.fillMaxWidth().padding(vertical = 2.dp),
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Text(domain, modifier = Modifier.weight(1f), style = MaterialTheme.typography.bodyMedium)
+                                IconButton(onClick = { onSave(domains - domain) }) {
+                                    Icon(Icons.Default.Delete, contentDescription = "删除规则")
+                                }
+                            }
+                        }
+                    }
+                }
+                Text("规则仅在开启“网页广告屏蔽”时生效，并保存在本机。部分广告可能由网站自身加载，无法保证全部拦截。", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            }
+        },
+        confirmButton = { TextButton(onClick = onDismiss) { Text("完成") } }
+    )
+}
+
+
 private fun loadVpnLinks(context: Context): List<String> {
     val raw = context.getSharedPreferences(PREFS, Context.MODE_PRIVATE).getString(KEY_VPN_LINKS, null) ?: return emptyList()
     return try {
@@ -519,7 +638,7 @@ private fun VpnLinksDialog(links: List<String>, onSave: (List<String>) -> Unit, 
 @SuppressLint("SetJavaScriptEnabled")
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-private fun BrowserScreen(site: Site, adBlockEnabled: Boolean, onBack: () -> Unit) {
+private fun BrowserScreen(site: Site, adBlockEnabled: Boolean, customAdDomains: List<String>, onBack: () -> Unit) {
     var progress by remember { mutableIntStateOf(0) }
     var webView by remember { mutableStateOf<WebView?>(null) }
     var address by remember(site.url) { mutableStateOf(site.url) }
@@ -604,7 +723,7 @@ private fun BrowserScreen(site: Site, adBlockEnabled: Boolean, onBack: () -> Uni
                     webViewClient = object : WebViewClient() {
                         override fun shouldInterceptRequest(view: WebView?, request: WebResourceRequest?): WebResourceResponse? {
                             val host = request?.url?.host?.lowercase().orEmpty()
-                            val blocked = adBlockEnabled && adDomains.any { host == it || host.endsWith(".$it") }
+                            val blocked = adBlockEnabled && (adDomains + customAdDomains).any { host == it || host.endsWith(".$it") }
                             return if (blocked) WebResourceResponse("text/plain", "utf-8", ByteArrayInputStream(ByteArray(0)))
                             else super.shouldInterceptRequest(view, request)
                         }
