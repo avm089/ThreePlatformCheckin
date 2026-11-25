@@ -1171,26 +1171,17 @@ private fun BrowserScreen(site: Site, adBlockEnabled: Boolean, customAdDomains: 
                             playerChoiceResource = null
                         }, modifier = Modifier.fillMaxWidth()) { Text("1. WebBox 内置播放器（ExoPlayer）") }
                         OutlinedButton(onClick = {
-                            val intent = Intent(context, VideoViewPlayerActivity::class.java).apply {
-                                putExtra(VideoPlayerActivity.EXTRA_URL, item.url)
-                                putExtra(VideoPlayerActivity.EXTRA_TITLE, item.title)
-                                putExtra(VideoPlayerActivity.EXTRA_REFERER, address)
-                                putExtra(VideoPlayerActivity.EXTRA_USER_AGENT, webView?.settings?.userAgentString ?: "Mozilla/5.0")
-                                putExtra(VideoPlayerActivity.EXTRA_COOKIE, CookieManager.getInstance().getCookie(item.url) ?: "")
+                            try {
+                                val intent = Intent(Intent.ACTION_VIEW).apply {
+                                    setPackage("com.quark.browser")
+                                    setDataAndType(Uri.parse(item.url), "video/*")
+                                }
+                                context.startActivity(intent)
+                            } catch (_: Exception) {
+                                Toast.makeText(context, "未检测到夸克浏览器，请先安装夸克", Toast.LENGTH_LONG).show()
                             }
-                            context.startActivity(intent)
                             playerChoiceResource = null
-                        }, modifier = Modifier.fillMaxWidth()) { Text("2. Android VideoView 播放器") }
-                        OutlinedButton(onClick = {
-                            try { context.startActivity(Intent(Intent.ACTION_VIEW).setDataAndType(Uri.parse(item.url), "video/*")) }
-                            catch (_: Exception) { Toast.makeText(context, "没有可用的系统播放器", Toast.LENGTH_SHORT).show() }
-                            playerChoiceResource = null
-                        }, modifier = Modifier.fillMaxWidth()) { Text("3. 系统默认播放器") }
-                        OutlinedButton(onClick = {
-                            try { context.startActivity(Intent.createChooser(Intent(Intent.ACTION_VIEW).setDataAndType(Uri.parse(item.url), "video/*"), "选择外部播放器")) }
-                            catch (_: Exception) { Toast.makeText(context, "没有可用的外部播放器", Toast.LENGTH_SHORT).show() }
-                            playerChoiceResource = null
-                        }, modifier = Modifier.fillMaxWidth()) { Text("4. 选择其他播放器应用") }
+                        }, modifier = Modifier.fillMaxWidth()) { Text("2. 夸克播放器") }
                     }
                 },
                 confirmButton = { TextButton(onClick = { playerChoiceResource = null }) { Text("取消") } }
