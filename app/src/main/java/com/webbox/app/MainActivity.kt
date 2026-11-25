@@ -213,6 +213,7 @@ private fun WebBoxApp() {
     var editorVisible by remember { mutableStateOf(false) }
     var editing by remember { mutableStateOf<Site?>(null) }
     var browserSite by remember { mutableStateOf<Site?>(null) }
+    var playerChoiceResource by remember { mutableStateOf<MediaResource?>(null) }
     var aboutVisible by remember { mutableStateOf(false) }
     var mainDownloadsVisible by remember { mutableStateOf(false) }
     var toolsVisible by remember { mutableStateOf(false) }
@@ -1093,7 +1094,53 @@ private fun BrowserScreen(site: Site, adBlockEnabled: Boolean, customAdDomains: 
             confirmButton = { TextButton(onClick = { downloadDialogVisible = false }) { Text("关闭") } }
         )
     }
-    if (mediaDialogVisible) {
+            if (playerChoiceResource != null) {
+            val item = playerChoiceResource!!
+            AlertDialog(
+                onDismissRequest = { playerChoiceResource = null },
+                title = { Text("选择播放器") },
+                text = {
+                    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                        Text(item.title, style = MaterialTheme.typography.titleSmall)
+                        OutlinedButton(onClick = {
+                            val intent = Intent(context, VideoPlayerActivity::class.java).apply {
+                                putExtra(VideoPlayerActivity.EXTRA_URL, item.url)
+                                putExtra(VideoPlayerActivity.EXTRA_TITLE, item.title)
+                                putExtra(VideoPlayerActivity.EXTRA_REFERER, address)
+                                putExtra(VideoPlayerActivity.EXTRA_USER_AGENT, webView?.settings?.userAgentString ?: "Mozilla/5.0")
+                                putExtra(VideoPlayerActivity.EXTRA_COOKIE, CookieManager.getInstance().getCookie(item.url) ?: "")
+                            }
+                            context.startActivity(intent)
+                            playerChoiceResource = null
+                        }, modifier = Modifier.fillMaxWidth()) { Text("1. WebBox 内置播放器（ExoPlayer）") }
+                        OutlinedButton(onClick = {
+                            val intent = Intent(context, VideoViewPlayerActivity::class.java).apply {
+                                putExtra(VideoPlayerActivity.EXTRA_URL, item.url)
+                                putExtra(VideoPlayerActivity.EXTRA_TITLE, item.title)
+                                putExtra(VideoPlayerActivity.EXTRA_REFERER, address)
+                                putExtra(VideoPlayerActivity.EXTRA_USER_AGENT, webView?.settings?.userAgentString ?: "Mozilla/5.0")
+                                putExtra(VideoPlayerActivity.EXTRA_COOKIE, CookieManager.getInstance().getCookie(item.url) ?: "")
+                            }
+                            context.startActivity(intent)
+                            playerChoiceResource = null
+                        }, modifier = Modifier.fillMaxWidth()) { Text("2. Android VideoView 播放器") }
+                        OutlinedButton(onClick = {
+                            try { context.startActivity(Intent(Intent.ACTION_VIEW).setDataAndType(Uri.parse(item.url), "video/*")) }
+                            catch (_: Exception) { Toast.makeText(context, "没有可用的系统播放器", Toast.LENGTH_SHORT).show() }
+                            playerChoiceResource = null
+                        }, modifier = Modifier.fillMaxWidth()) { Text("3. 系统默认播放器") }
+                        OutlinedButton(onClick = {
+                            try { context.startActivity(Intent.createChooser(Intent(Intent.ACTION_VIEW).setDataAndType(Uri.parse(item.url), "video/*"), "选择外部播放器")) }
+                            catch (_: Exception) { Toast.makeText(context, "没有可用的外部播放器", Toast.LENGTH_SHORT).show() }
+                            playerChoiceResource = null
+                        }, modifier = Modifier.fillMaxWidth()) { Text("4. 选择其他播放器应用") }
+                    }
+                },
+                confirmButton = { TextButton(onClick = { playerChoiceResource = null }) { Text("取消") } }
+            )
+        }
+
+if (mediaDialogVisible) {
         AlertDialog(
             onDismissRequest = { mediaDialogVisible = false },
             title = { Text("网页资源嗅探（${mediaResources.size}）") },
@@ -1110,16 +1157,10 @@ private fun BrowserScreen(site: Site, adBlockEnabled: Boolean, customAdDomains: 
                                     Text(item.type, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.secondary)
                                     Text(item.url, style = MaterialTheme.typography.bodySmall, maxLines = 2)
                                     Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
-                                        TextButton(onClick = {
-                                            val intent = Intent(context, VideoPlayerActivity::class.java).apply {
-                                                putExtra(VideoPlayerActivity.EXTRA_URL, item.url)
-                                                putExtra(VideoPlayerActivity.EXTRA_TITLE, item.title)
-                                                putExtra(VideoPlayerActivity.EXTRA_REFERER, address)
-                                                putExtra(VideoPlayerActivity.EXTRA_USER_AGENT, webView?.settings?.userAgentString ?: "Mozilla/5.0")
-                                                putExtra(VideoPlayerActivity.EXTRA_COOKIE, CookieManager.getInstance().getCookie(item.url) ?: "")
-                                            }
-                                            context.startActivity(intent)
-                                        }) { Icon(Icons.Default.PlayArrow, contentDescription = null); Text("播放器") }
+                                        TextButton(onClick = { playerChoiceResource = item }) {
+                                            Icon(Icons.Default.PlayArrow, contentDescription = null)
+                                            Text("选择播放器")
+                                        }
                                         TextButton(onClick = { downloadMedia(item) }) { Icon(Icons.Default.Download, contentDescription = null); Text("下载") }
                                     }
                                     Divider()
