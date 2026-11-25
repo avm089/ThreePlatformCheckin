@@ -216,6 +216,7 @@ private fun WebBoxApp() {
     val context = LocalContext.current
     var sites by remember { mutableStateOf(loadSites(context)) }
     var search by remember { mutableStateOf("") }
+    var homeAddress by remember { mutableStateOf("") }
     var selectedCategory by remember { mutableStateOf("全部") }
     var editorVisible by remember { mutableStateOf(false) }
     var editing by remember { mutableStateOf<Site?>(null) }
@@ -289,8 +290,30 @@ private fun WebBoxApp() {
                 Column(
                     Modifier.fillMaxSize().padding(padding).padding(horizontal = 16.dp)
                 ) {
+                    OutlinedTextField(
+                        value = homeAddress,
+                        onValueChange = { homeAddress = it },
+                        modifier = Modifier.fillMaxWidth().padding(top = 8.dp, bottom = 12.dp),
+                        placeholder = { Text("输入网址或搜索内容") },
+                        leadingIcon = { Icon(Icons.Default.Language, contentDescription = "浏览器") },
+                        trailingIcon = {
+                            IconButton(onClick = {
+                                val input = homeAddress.trim()
+                                if (input.isNotBlank()) {
+                                    val target = if (input.contains(" ") || (!input.contains(".") && !input.startsWith("http", true))) {
+                                        "https://www.google.com/search?q=" + Uri.encode(input)
+                                    } else normalizeUrl(input)
+                                    browserSite = Site(name = "网页浏览", url = target, category = "其他")
+                                }
+                            }) {
+                                Icon(Icons.Default.ArrowForward, contentDescription = "进入网页")
+                            }
+                        },
+                        singleLine = true,
+                        shape = RoundedCornerShape(18.dp)
+                    )
                     Card(
-                        modifier = Modifier.fillMaxWidth().padding(top = 8.dp, bottom = 14.dp),
+                        modifier = Modifier.fillMaxWidth().padding(top = 0.dp, bottom = 14.dp),
                         shape = RoundedCornerShape(26.dp),
                         colors = CardDefaults.cardColors(containerColor = Color.Transparent)
                     ) {
