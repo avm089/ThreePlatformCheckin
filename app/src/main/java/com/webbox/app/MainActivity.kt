@@ -25,6 +25,7 @@ import androidx.activity.result.contract.ActivityResultContracts
 import androidx.activity.compose.BackHandler
 import androidx.activity.compose.setContent
 import androidx.compose.foundation.Image
+import coil.compose.AsyncImage
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.horizontalScroll
@@ -1409,7 +1410,27 @@ private fun AdultZoneDialog(onOpen: (Pair<String, String>) -> Unit, onDismiss: (
                 }
             } else {
                 Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                    Text("仅供成年人使用。请遵守所在地年龄验证规定及网站条款。")
+                    Card(
+                        modifier = Modifier.fillMaxWidth(),
+                        shape = RoundedCornerShape(18.dp),
+                        colors = CardDefaults.cardColors(containerColor = Color(0xFF24152F))
+                    ) {
+                        Box(
+                            Modifier.fillMaxWidth().height(112.dp)
+                                .background(Brush.linearGradient(listOf(Color(0xFF51245F), Color(0xFF171B35))))
+                                .padding(14.dp)
+                        ) {
+                            Row(Modifier.fillMaxSize(), verticalAlignment = Alignment.CenterVertically) {
+                                Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(5.dp)) {
+                                    Text("成人影视 · 独立导航", color = Color.White, style = MaterialTheme.typography.titleLarge)
+                                    Text("视频 / 直播 / 创作者", color = Color(0xFFD9C6E5), style = MaterialTheme.typography.bodySmall)
+                                    Text("仅限成年人 · 请遵守当地法律", color = Color(0xFFB9A9C4), style = MaterialTheme.typography.labelSmall)
+                                }
+                                Icon(Icons.Default.Movie, contentDescription = null, tint = Color(0xFFE5B8FF), modifier = Modifier.size(52.dp))
+                            }
+                        }
+                    }
+                    Text("仅供成年人使用。请遵守所在地年龄验证规定及网站条款。", style = MaterialTheme.typography.bodySmall)
                     OutlinedTextField(
                         value = query, onValueChange = { query = it },
                         modifier = Modifier.fillMaxWidth(),
@@ -1451,11 +1472,19 @@ private fun AdultZoneDialog(onOpen: (Pair<String, String>) -> Unit, onDismiss: (
                                     colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.55f))
                                 ) {
                                     Column(Modifier.fillMaxWidth().padding(10.dp)) {
-                                        Row(verticalAlignment = Alignment.CenterVertically) {
-                                            Column(Modifier.weight(1f).clickable { onOpen(site.name to site.url) }) {
-                                                Text(site.name, style = MaterialTheme.typography.titleSmall)
-                                                Text(site.category + " · " + site.url, style = MaterialTheme.typography.bodySmall,
+                                        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                                            AsyncImage(
+                                                model = "https://www.google.com/s2/favicons?domain=" + Uri.parse(site.url).host.orEmpty() + "&sz=128",
+                                                contentDescription = site.name + " 网站图标",
+                                                modifier = Modifier.size(54.dp).background(MaterialTheme.colorScheme.surface, RoundedCornerShape(12.dp)).padding(7.dp),
+                                                contentScale = ContentScale.Fit
+                                            )
+                                            Column(Modifier.weight(1f).clickable { onOpen(site.name to site.url) }, verticalArrangement = Arrangement.spacedBy(3.dp)) {
+                                                Text(site.name, style = MaterialTheme.typography.titleMedium)
+                                                Text(site.category + " · 官方网站", style = MaterialTheme.typography.bodySmall,
                                                     color = MaterialTheme.colorScheme.secondary, maxLines = 1)
+                                                Text(Uri.parse(site.url).host.orEmpty(), style = MaterialTheme.typography.labelSmall,
+                                                    color = MaterialTheme.colorScheme.outline, maxLines = 1)
                                             }
                                             IconButton(onClick = {
                                                 save(sites.mapIndexed { index, item ->
