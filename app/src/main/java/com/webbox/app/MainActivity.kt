@@ -269,6 +269,9 @@ private fun WebBoxApp() {
                             }
                         },
                         actions = {
+                            IconButton(onClick = { vpnVisible = true }) {
+                                Icon(Icons.Default.VpnKey, contentDescription = "VPN 链接管理")
+                            }
                             IconButton(onClick = { toolsVisible = true }) {
                                 Icon(Icons.Default.Settings, contentDescription = "设置")
                             }
@@ -446,14 +449,6 @@ private fun WebBoxApp() {
                             android.webkit.WebStorage.getInstance().deleteAllData()
                             Toast.makeText(context, "浏览器 Cookie 和网页数据已清除", Toast.LENGTH_SHORT).show()
                         }, modifier = Modifier.fillMaxWidth()) { Text("清除浏览数据") }
-                        Divider()
-                        Text("VPN 链接管理", style = MaterialTheme.typography.titleMedium)
-                        Text("添加和保存你自己的 VPN 配置/订阅链接。保存链接本身不会建立 VPN 隧道，真实连接需要对应协议内核。", style = MaterialTheme.typography.bodySmall)
-                        OutlinedButton(onClick = { toolsVisible = false; vpnVisible = true }, modifier = Modifier.fillMaxWidth()) {
-                            Icon(Icons.Default.VpnKey, contentDescription = null)
-                            Spacer(Modifier.width(8.dp))
-                            Text("管理 VPN 链接（${vpnLinks.size}）")
-                        }
                         OutlinedButton(onClick = { toolsVisible = false; aboutVisible = true }, modifier = Modifier.fillMaxWidth()) {
                             Icon(Icons.Default.Info, contentDescription = null)
                             Spacer(Modifier.width(8.dp))
