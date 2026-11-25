@@ -1,0 +1,11 @@
+<!doctype html>
+<html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>WebBox 管理后台</title><link rel="stylesheet" href="./style.css"><script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script><script src="./config.js"></script></head>
+<body><main class="wrap"><header><div><p class="eyebrow">WEBBOX CONTROL CENTER</p><h1>网址百宝箱 · 管理后台</h1><p class="muted">管理网站、广告规则与 VPN 配置</p></div><span id="status" class="pill">未连接</span></header>
+<section id="setup" class="panel"><h2>连接云端数据库</h2><p>先在 config.js 填入 Supabase Project URL 和 anon key。不要填写 service_role 密钥。</p><a href="https://supabase.com/dashboard" target="_blank" rel="noreferrer">打开 Supabase 控制台 ↗</a><p id="setupmsg" class="muted"></p></section>
+<section id="login" class="panel hidden"><h2>管理员登录</h2><label>邮箱<input id="email" type="email" autocomplete="username" placeholder="管理员邮箱"></label><label>密码<input id="password" type="password" autocomplete="current-password" placeholder="密码"></label><button id="loginBtn">登录</button><p id="loginmsg" class="muted"></p></section>
+<section id="app" class="hidden"><nav><button data-tab="sites" class="active">网址管理</button><button data-tab="ads">广告规则</button><button data-tab="vpn">VPN 链接</button></nav>
+<div id="sites" class="panel tab"><div class="sectionhead"><h2>网址管理</h2><button id="addSite">＋ 添加网址</button></div><div id="siteList"></div></div>
+<div id="ads" class="panel tab hidden"><div class="sectionhead"><h2>广告屏蔽规则</h2><button id="addAd">＋ 添加域名</button></div><div id="adList"></div></div>
+<div id="vpn" class="panel tab hidden"><div class="sectionhead"><h2>VPN 配置链接</h2><button id="addVpn">＋ 添加链接</button></div><div id="vpnList"></div><p class="muted">这里只管理配置链接，不代表 APP 已具备 VPN 协议内核。</p></div>
+<div class="logout"><span id="who" class="muted"></span><button id="logoutBtn" class="secondary">退出登录</button></div></section>
+</main><dialog id="editor"><form method="dialog" id="editForm"><h2 id="editTitle">编辑</h2><div id="fields"></div><div class="actions"><button value="cancel" class="secondary">取消</button><button id="saveBtn" value="default">保存</button></div></form></dialog><script src="./app.js"></script></body></html>
