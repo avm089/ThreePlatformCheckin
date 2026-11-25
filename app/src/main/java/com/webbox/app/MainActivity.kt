@@ -69,7 +69,6 @@ private data class Site(
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        getSharedPreferences("webbox_store", MODE_PRIVATE).edit().remove("vpn_links").apply()
         setContent { WebBoxApp() }
     }
 }
