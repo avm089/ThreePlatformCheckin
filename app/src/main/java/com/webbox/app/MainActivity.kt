@@ -904,6 +904,7 @@ private fun BrowserScreen(site: Site, adBlockEnabled: Boolean, customAdDomains: 
     var downloadDialogVisible by remember { mutableStateOf(false) }
     var downloadItems by remember { mutableStateOf(loadDownloadItems(context)) }
     val manualPickModeState = rememberUpdatedState(manualPickEnabled)
+    val forcePlayerEnabledState = rememberUpdatedState(forceCustomPlayer)
     val elementBridge = remember(site.id) { AdElementBridge { host, selector ->
         if (host.isNotBlank() && selector.isNotBlank()) saveElementRule(context, host.lowercase(), selector)
         Toast.makeText(context, "已屏蔽此广告区域", Toast.LENGTH_SHORT).show()
@@ -914,7 +915,7 @@ private fun BrowserScreen(site: Site, adBlockEnabled: Boolean, customAdDomains: 
             if ((parsed.scheme == "http" || parsed.scheme == "https") && !parsed.host.isNullOrBlank()) {
                 val item = MediaResource(url, type, title.ifBlank { "网页媒体文件" })
                 mediaResources = (mediaResources.filterNot { it.url == url } + item).takeLast(100)
-                if (type == "强制接管视频" && forceCustomPlayer && !takeoverInProgress) {
+                if (type == "强制接管视频" && forcePlayerEnabledState.value && !takeoverInProgress) {
                     takeoverInProgress = true
                     try {
                         val intent = Intent(context, VideoPlayerActivity::class.java).apply {
