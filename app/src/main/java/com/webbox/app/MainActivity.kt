@@ -926,6 +926,7 @@ private fun BrowserScreen(site: Site, adBlockEnabled: Boolean, customAdDomains: 
                         }
                         context.startActivity(intent)
                         Toast.makeText(context, "已尝试接管网页视频", Toast.LENGTH_SHORT).show()
+                        takeoverInProgress = false
                     } catch (e: Exception) {
                         takeoverInProgress = false
                         Toast.makeText(context, "接管失败：${e.message}", Toast.LENGTH_LONG).show()
@@ -934,6 +935,10 @@ private fun BrowserScreen(site: Site, adBlockEnabled: Boolean, customAdDomains: 
             }
         }
     } }
+
+    LaunchedEffect(forceCustomPlayer) {
+        webView?.evaluateJavascript("window.__webboxForcePlayerEnabled=$forceCustomPlayer", null)
+    }
 
     fun downloadMedia(item: MediaResource) {
         try {
@@ -1070,7 +1075,7 @@ private fun BrowserScreen(site: Site, adBlockEnabled: Boolean, customAdDomains: 
                             val rulesJson = JSONArray(loadElementRules(context, host)).toString()
                             val setupScript = """(function(){if(window.__webboxPickerInstalled)return;window.__webboxPickerInstalled=true;window.__webboxPickMode=false;function makeSelector(el){if(el.id)return "#"+CSS.escape(el.id);var parts=[];while(el&&el.nodeType===1&&el!==document.body){var part=el.tagName.toLowerCase();if(el.className&&typeof el.className==="string"){var cls=el.className.trim().split(/\\s+/).filter(Boolean)[0];if(cls)part+="."+CSS.escape(cls)}var parent=el.parentElement;if(parent){var same=Array.from(parent.children).filter(x=>x.tagName===el.tagName);if(same.length>1)part+=":nth-of-type("+(same.indexOf(el)+1)+")"}parts.unshift(part);el=parent;if(el&&el.id){parts.unshift("#"+CSS.escape(el.id));break}}return parts.join(" > ")}document.addEventListener("click",function(e){if(!window.__webboxPickMode)return;var el=e.target;if(!el||el===document.body)return;e.preventDefault();e.stopPropagation();e.stopImmediatePropagation();var selector=makeSelector(el);el.style.setProperty("display","none","important");if(window.WebBoxBridge)window.WebBoxBridge.block(location.hostname,selector)},true);window.__webboxSetPickMode=function(v){window.__webboxPickMode=!!v;document.documentElement.style.cursor=v?"crosshair":""};window.__webboxApplyRules=function(rules){(rules||[]).forEach(function(sel){try{document.querySelectorAll(sel).forEach(function(el){el.style.setProperty("display","none","important")})}catch(e){}})}})();window.__webboxApplyRules($rulesJson);window.__webboxSetPickMode(${manualPickModeState.value});"""
                             view?.evaluateJavascript(setupScript, null)
-                            val forcePlayerScript = """(function(){if(window.__webboxForcePlayerInstalled)return;window.__webboxForcePlayerInstalled=true;document.addEventListener("play",function(e){if(!${forceCustomPlayer})return;var v=e.target;if(!v||v.tagName!=="VIDEO")return;var u=v.currentSrc||v.src;if(!u||!/^https?:/i.test(u))return;v.pause();v.style.setProperty("visibility","hidden","important");v.style.setProperty("height","1px","important");if(window.WebBoxMediaBridge)window.WebBoxMediaBridge.found(u,"强制接管视频",document.title||"网页视频");},true);})();"""
+                            val forcePlayerScript = """(function(){if(window.__webboxForcePlayerInstalled)return;window.__webboxForcePlayerInstalled=true;window.__webboxForcePlayerEnabled=${forceCustomPlayer};document.addEventListener("play",function(e){if(!window.__webboxForcePlayerEnabled)return;var v=e.target;if(!v||v.tagName!=="VIDEO")return;var u=v.currentSrc||v.src;if(!u||!/^https?:/i.test(u))return;v.pause();v.style.setProperty("visibility","hidden","important");v.style.setProperty("height","1px","important");if(window.WebBoxMediaBridge)window.WebBoxMediaBridge.found(u,"强制接管视频",document.title||"网页视频");},true);})();"""
                             view?.evaluateJavascript(forcePlayerScript, null)
                             val mediaScanScript = """(function(){if(window.__webboxMediaScannerInstalled){window.__webboxScanMedia&&window.__webboxScanMedia();return;}window.__webboxMediaScannerInstalled=true;var seen={};function send(u,t){try{if(!u||/^(blob:|data:|javascript:)/i.test(u))return;u=new URL(u,location.href).href;if(!/^https?:/i.test(u)||seen[u])return;if(!/\\.(mp4|webm|m4v|mov|mp3|m4a|aac|ogg|wav|pdf|zip|rar|7z|apk|exe|dmg|docx?|xlsx?|pptx?|csv|txt|jpg|jpeg|png|gif|webp)(?:[?#]|$)/i.test(u)&&t.indexOf('媒体元素')!==0)return;seen[u]=1;if(window.WebBoxMediaBridge)window.WebBoxMediaBridge.found(u,t,document.title||'网页媒体文件');}catch(e){}}function scan(){document.querySelectorAll('video,audio').forEach(function(el){send(el.currentSrc||el.src,'媒体元素');el.querySelectorAll('source').forEach(function(s){send(s.src,'媒体元素');});});document.querySelectorAll('a[href]').forEach(function(a){send(a.href,'网页文件链接');});var entries=performance.getEntriesByType('resource')||[];entries.forEach(function(e){send(e.name,'网络媒体资源');});}window.__webboxScanMedia=scan;scan();var observer=new MutationObserver(scan);observer.observe(document.documentElement,{childList:true,subtree:true,attributes:true,attributeFilter:['src']});setTimeout(function(){try{observer.disconnect();}catch(e){}},180000);})();"""
                             view?.evaluateJavascript(mediaScanScript, null)
