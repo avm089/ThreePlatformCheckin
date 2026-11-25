@@ -471,7 +471,7 @@ private fun WebBoxApp() {
             AlertDialog(
                 onDismissRequest = { aboutVisible = false },
                 title = { Text("关于网址百宝箱") },
-                text = { Text("WebBox 1.0.0\n网站列表仅保存在本机。打开的网站内容由对应网站提供。") },
+                text = { Text("WebBox 1.6.0\n网站列表仅保存在本机。打开的网站内容由对应网站提供。") },
                 confirmButton = {
                     TextButton(onClick = { aboutVisible = false }) { Text("知道了") }
                 }
