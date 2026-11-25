@@ -28,6 +28,9 @@ import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.horizontalScroll
+import androidx.compose.foundation.gestures.detectHorizontalDragGestures
+import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.input.pointer.consume
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
@@ -1083,7 +1086,25 @@ private fun BrowserScreen(site: Site, adBlockEnabled: Boolean, customAdDomains: 
             )
         }
         AndroidView(
-            modifier = Modifier.fillMaxSize(),
+            modifier = Modifier.fillMaxSize().pointerInput(webView) {
+                var totalDrag = 0f
+                val threshold = 100.dp.toPx()
+                detectHorizontalDragGestures(
+                    onDragStart = { totalDrag = 0f },
+                    onHorizontalDrag = { change, dragAmount ->
+                        totalDrag += dragAmount
+                        change.consume()
+                    },
+                    onDragEnd = {
+                        val current = webView
+                        if (totalDrag > threshold && current?.canGoBack() == true) {
+                            current.goBack()
+                        } else if (totalDrag < -threshold && current?.canGoForward() == true) {
+                            current.goForward()
+                        }
+                    }
+                )
+            },
             factory = { context ->
                 WebView(context).apply {
                     webView = this
