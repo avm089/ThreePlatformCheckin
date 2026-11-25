@@ -2,10 +2,20 @@ package com.webbox.app
 
 import android.annotation.SuppressLint
 import android.content.Context
+import android.app.DownloadManager
+import android.net.Uri
 import android.os.Bundle
+import android.os.Environment
+import android.webkit.CookieManager
+import android.webkit.DownloadListener
 import android.webkit.WebChromeClient
+import android.webkit.WebResourceRequest
+import android.webkit.WebResourceResponse
 import android.webkit.WebView
 import android.webkit.WebViewClient
+import android.webkit.URLUtil
+import android.widget.Toast
+import java.io.ByteArrayInputStream
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.BackHandler
 import androidx.activity.compose.setContent
@@ -49,6 +59,9 @@ class MainActivity : ComponentActivity() {
 
 private const val PREFS = "webbox_store"
 private const val KEY_SITES = "sites"
+private const val KEY_AD_BLOCK = "ad_block"
+private const val KEY_VPN_LINKS = "vpn_links"
+private val adDomains = setOf("doubleclick.net", "googlesyndication.com", "googleadservices.com", "adnxs.com", "taboola.com", "outbrain.com", "criteo.com", "amazon-adsystem.com", "scorecardresearch.com", "adsafeprotected.com", "adservice.google.com")
 private val categories = listOf("全部", "常用", "工具", "购物", "学习", "其他")
 
 private fun normalizeUrl(value: String): String {
@@ -110,6 +123,10 @@ private fun WebBoxApp() {
     var editing by remember { mutableStateOf<Site?>(null) }
     var browserSite by remember { mutableStateOf<Site?>(null) }
     var aboutVisible by remember { mutableStateOf(false) }
+    var toolsVisible by remember { mutableStateOf(false) }
+    var vpnVisible by remember { mutableStateOf(false) }
+    var adBlockEnabled by remember { mutableStateOf(context.getSharedPreferences(PREFS, Context.MODE_PRIVATE).getBoolean(KEY_AD_BLOCK, true)) }
+    var vpnLinks by remember { mutableStateOf(loadVpnLinks(context)) }
 
     fun updateSites(next: List<Site>) {
         sites = next
@@ -120,7 +137,7 @@ private fun WebBoxApp() {
 
     MaterialTheme(colorScheme = lightColorScheme(primary = androidx.compose.ui.graphics.Color(0xFF3157D5))) {
         if (browserSite != null) {
-            BrowserScreen(site = browserSite!!, onBack = { browserSite = null })
+            BrowserScreen(site = browserSite!!, adBlockEnabled = adBlockEnabled, onBack = { browserSite = null })
         } else {
             Scaffold(
                 topBar = {
@@ -132,6 +149,9 @@ private fun WebBoxApp() {
                             }
                         },
                         actions = {
+                            IconButton(onClick = { toolsVisible = true }) {
+                                Icon(Icons.Default.Tune, contentDescription = "功能设置")
+                            }
                             IconButton(onClick = { aboutVisible = true }) {
                                 Icon(Icons.Default.Info, contentDescription = "关于")
                             }
@@ -222,6 +242,59 @@ private fun WebBoxApp() {
                     }
                     editorVisible = false
                 }
+            )
+        }
+
+
+        if (toolsVisible) {
+            AlertDialog(
+                onDismissRequest = { toolsVisible = false },
+                title = { Text("浏览器与隐私设置") },
+                text = {
+                    Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Column(Modifier.weight(1f)) {
+                                Text("网页广告屏蔽", style = MaterialTheme.typography.titleMedium)
+                                Text("拦截常见广告与跟踪域名；部分网站广告可能仍会出现", style = MaterialTheme.typography.bodySmall)
+                            }
+                            Switch(checked = adBlockEnabled, onCheckedChange = {
+                                adBlockEnabled = it
+                                context.getSharedPreferences(PREFS, Context.MODE_PRIVATE).edit().putBoolean(KEY_AD_BLOCK, it).apply()
+                            })
+                        }
+                        Divider()
+                        Text("隐私防护", style = MaterialTheme.typography.titleMedium)
+                        Text("清除内置浏览器 Cookie、缓存和网页存储。", style = MaterialTheme.typography.bodySmall)
+                        OutlinedButton(onClick = {
+                            CookieManager.getInstance().removeAllCookies(null)
+                            CookieManager.getInstance().flush()
+                            android.webkit.WebStorage.getInstance().deleteAllData()
+                            Toast.makeText(context, "浏览器 Cookie 和网页数据已清除", Toast.LENGTH_SHORT).show()
+                        }, modifier = Modifier.fillMaxWidth()) { Text("清除浏览数据") }
+                        Divider()
+                        Text("VPN 链接管理", style = MaterialTheme.typography.titleMedium)
+                        Text("添加和保存你自己的 VPN 配置/订阅链接。保存链接本身不会建立 VPN 隧道，真实连接需要对应协议内核。", style = MaterialTheme.typography.bodySmall)
+                        OutlinedButton(onClick = { toolsVisible = false; vpnVisible = true }, modifier = Modifier.fillMaxWidth()) {
+                            Icon(Icons.Default.VpnKey, contentDescription = null)
+                            Spacer(Modifier.width(8.dp))
+                            Text("管理 VPN 链接（${vpnLinks.size}）")
+                        }
+                    }
+                },
+                confirmButton = { TextButton(onClick = { toolsVisible = false }) { Text("完成") } }
+            )
+        }
+
+        if (vpnVisible) {
+            VpnLinksDialog(
+                links = vpnLinks,
+                onSave = { next ->
+                    vpnLinks = next
+                    val array = JSONArray()
+                    next.forEach { array.put(it) }
+                    context.getSharedPreferences(PREFS, Context.MODE_PRIVATE).edit().putString(KEY_VPN_LINKS, array.toString()).apply()
+                },
+                onDismiss = { vpnVisible = false }
             )
         }
 
@@ -391,12 +464,66 @@ private fun SiteEditorDialog(
     )
 }
 
+
+private fun loadVpnLinks(context: Context): List<String> {
+    val raw = context.getSharedPreferences(PREFS, Context.MODE_PRIVATE).getString(KEY_VPN_LINKS, null) ?: return emptyList()
+    return try {
+        val array = JSONArray(raw)
+        (0 until array.length()).map { array.optString(it) }.filter { it.isNotBlank() }
+    } catch (_: Exception) { emptyList() }
+}
+
+@Composable
+private fun VpnLinksDialog(links: List<String>, onSave: (List<String>) -> Unit, onDismiss: () -> Unit) {
+    var newLink by remember { mutableStateOf("") }
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("我的 VPN 链接") },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                OutlinedTextField(
+                    value = newLink,
+                    onValueChange = { newLink = it },
+                    modifier = Modifier.fillMaxWidth(),
+                    label = { Text("粘贴 VPN 配置/订阅链接") },
+                    placeholder = { Text("https://… 或协议分享链接") },
+                    minLines = 2
+                )
+                Button(
+                    onClick = {
+                        val value = newLink.trim()
+                        if (value.isNotBlank() && value !in links) onSave(links + value)
+                        newLink = ""
+                    },
+                    enabled = newLink.isNotBlank(),
+                    modifier = Modifier.fillMaxWidth()
+                ) { Text("保存链接") }
+                if (links.isEmpty()) Text("暂时没有 VPN 链接", style = MaterialTheme.typography.bodySmall)
+                else LazyColumn(Modifier.heightIn(max = 180.dp)) {
+                    items(links) { link ->
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Text(link, modifier = Modifier.weight(1f), maxLines = 2, style = MaterialTheme.typography.bodySmall)
+                            IconButton(onClick = { onSave(links - link) }) {
+                                Icon(Icons.Default.Delete, contentDescription = "删除链接")
+                            }
+                        }
+                    }
+                }
+                Text("提示：目前此处用于保存和管理链接，尚未集成 VPN 协议内核，因此不会显示虚假的连接状态。", color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodySmall)
+            }
+        },
+        confirmButton = { TextButton(onClick = onDismiss) { Text("完成") } }
+    )
+}
+
 @SuppressLint("SetJavaScriptEnabled")
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-private fun BrowserScreen(site: Site, onBack: () -> Unit) {
+private fun BrowserScreen(site: Site, adBlockEnabled: Boolean, onBack: () -> Unit) {
     var progress by remember { mutableIntStateOf(0) }
     var webView by remember { mutableStateOf<WebView?>(null) }
+    var address by remember(site.url) { mutableStateOf(site.url) }
+    val context = LocalContext.current
 
     Column(Modifier.fillMaxSize()) {
         TopAppBar(
@@ -407,11 +534,35 @@ private fun BrowserScreen(site: Site, onBack: () -> Unit) {
                 }
             },
             actions = {
+                IconButton(onClick = { if (webView?.canGoBack() == true) webView?.goBack() }) {
+                    Icon(Icons.Default.ArrowBack, contentDescription = "网页后退")
+                }
+                IconButton(onClick = { if (webView?.canGoForward() == true) webView?.goForward() }) {
+                    Icon(Icons.Default.ArrowForward, contentDescription = "网页前进")
+                }
                 IconButton(onClick = { webView?.reload() }) {
                     Icon(Icons.Default.Refresh, contentDescription = "刷新")
                 }
             }
         )
+        Row(Modifier.fillMaxWidth().padding(horizontal = 10.dp, vertical = 6.dp), verticalAlignment = Alignment.CenterVertically) {
+            OutlinedTextField(
+                value = address,
+                onValueChange = { address = it },
+                modifier = Modifier.weight(1f),
+                singleLine = true,
+                placeholder = { Text("输入网址或搜索") },
+                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Uri)
+            )
+            Spacer(Modifier.width(6.dp))
+            Button(onClick = {
+                val target = if (address.contains(" ") || (!address.contains(".") && !address.startsWith("http"))) {
+                    "https://www.google.com/search?q=" + Uri.encode(address)
+                } else normalizeUrl(address)
+                address = target
+                webView?.loadUrl(target)
+            }) { Text("前往") }
+        }
         if (progress in 1..99) {
             LinearProgressIndicator(
                 progress = { progress / 100f },
@@ -426,12 +577,43 @@ private fun BrowserScreen(site: Site, onBack: () -> Unit) {
                     settings.javaScriptEnabled = true
                     settings.domStorageEnabled = true
                     settings.loadsImagesAutomatically = true
+                    setDownloadListener(DownloadListener { url, userAgent, contentDisposition, mimeType, _ ->
+                        try {
+                            val fileName = URLUtil.guessFileName(url, contentDisposition, mimeType)
+                            val request = DownloadManager.Request(Uri.parse(url)).apply {
+                                setTitle(fileName)
+                                setDescription("正在下载：$fileName")
+                                setMimeType(mimeType)
+                                setNotificationVisibility(DownloadManager.Request.VISIBILITY_VISIBLE_NOTIFY_COMPLETED)
+                                setDestinationInExternalPublicDir(Environment.DIRECTORY_DOWNLOADS, fileName)
+                                addRequestHeader("User-Agent", userAgent)
+                                CookieManager.getInstance().getCookie(url)?.let { addRequestHeader("Cookie", it) }
+                            }
+                            val manager = context.getSystemService(Context.DOWNLOAD_SERVICE) as DownloadManager
+                            manager.enqueue(request)
+                            Toast.makeText(context, "已加入系统下载任务", Toast.LENGTH_SHORT).show()
+                        } catch (e: Exception) {
+                            Toast.makeText(context, "下载失败：${e.message}", Toast.LENGTH_LONG).show()
+                        }
+                    })
                     webChromeClient = object : WebChromeClient() {
                         override fun onProgressChanged(view: WebView?, newProgress: Int) {
                             progress = newProgress
                         }
                     }
-                    webViewClient = WebViewClient()
+                    webViewClient = object : WebViewClient() {
+                        override fun shouldInterceptRequest(view: WebView?, request: WebResourceRequest?): WebResourceResponse? {
+                            val host = request?.url?.host?.lowercase().orEmpty()
+                            val blocked = adBlockEnabled && adDomains.any { host == it || host.endsWith(".$it") }
+                            return if (blocked) WebResourceResponse("text/plain", "utf-8", ByteArrayInputStream(ByteArray(0)))
+                            else super.shouldInterceptRequest(view, request)
+                        }
+                        override fun onPageFinished(view: WebView?, url: String?) {
+                            if (!url.isNullOrBlank()) address = url
+                            super.onPageFinished(view, url)
+                        }
+                    }
+                    settings.cacheMode = android.webkit.WebSettings.LOAD_DEFAULT
                     loadUrl(site.url)
                 }
             },
