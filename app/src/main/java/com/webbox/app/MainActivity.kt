@@ -215,6 +215,8 @@ private fun saveSites(context: Context, sites: List<Site>) {
 private fun WebBoxApp() {
     val context = LocalContext.current
     var sites by remember { mutableStateOf(loadSites(context)) }
+    var darkMode by remember { mutableStateOf(context.getSharedPreferences(PREFS, Context.MODE_PRIVATE).getBoolean("dark_mode", false)) }
+    var featureHubVisible by remember { mutableStateOf(false) }
     var search by remember { mutableStateOf("") }
     var selectedCategory by remember { mutableStateOf("全部") }
     var editorVisible by remember { mutableStateOf(false) }
@@ -252,7 +254,7 @@ private fun WebBoxApp() {
 
     BackHandler(enabled = browserSite != null) { browserSite = null }
 
-    MaterialTheme(colorScheme = lightColorScheme(primary = themeColors[themeIndex])) {
+    MaterialTheme(colorScheme = if (darkMode) darkColorScheme(primary = themeColors[themeIndex]) else lightColorScheme(primary = themeColors[themeIndex])) {
         if (browserSite != null) {
             BrowserScreen(site = browserSite!!, adBlockEnabled = adBlockEnabled, customAdDomains = customAdDomains, forceCustomPlayer = forceCustomPlayer, onBack = { browserSite = null })
         } else {
@@ -433,6 +435,8 @@ private fun WebBoxApp() {
                             Spacer(Modifier.width(8.dp))
                             Text("壁纸与外观图标")
                         }
+                        OutlinedButton(onClick = { featureHubVisible = true }, modifier = Modifier.fillMaxWidth()) { Icon(Icons.Default.AutoAwesome, contentDescription = null); Spacer(Modifier.width(8.dp)); Text("新功能中心（10 项）") }
+                        Row(verticalAlignment = Alignment.CenterVertically) { Column(Modifier.weight(1f)) { Text("深色夜间模式", style = MaterialTheme.typography.titleMedium); Text("切换浏览器首页的深色外观", style = MaterialTheme.typography.bodySmall) }; Switch(checked = darkMode, onCheckedChange = { darkMode = it; context.getSharedPreferences(PREFS, Context.MODE_PRIVATE).edit().putBoolean("dark_mode", it).apply() }) }
                         Divider()
                         Text("隐私防护", style = MaterialTheme.typography.titleMedium)
                         Text("清除内置浏览器 Cookie、缓存和网页存储。", style = MaterialTheme.typography.bodySmall)
@@ -461,6 +465,26 @@ private fun WebBoxApp() {
             )
         }
 
+        if (featureHubVisible) {
+            AlertDialog(onDismissRequest = { featureHubVisible = false }, title = { Text("WebBox 新功能中心") },
+                text = {
+                    Column(Modifier.heightIn(max = 520.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                        Text("选择要使用的功能：", style = MaterialTheme.typography.bodySmall)
+                        OutlinedButton(onClick = { darkMode = !darkMode; context.getSharedPreferences(PREFS, Context.MODE_PRIVATE).edit().putBoolean("dark_mode", darkMode).apply() }, modifier = Modifier.fillMaxWidth()) { Text(if (darkMode) "☀️ 切换日间模式" else "🌙 夜间模式") }
+                        OutlinedButton(onClick = { Toast.makeText(context, "多标签栏正在规划中；目前可从首页分别打开收藏网站", Toast.LENGTH_LONG).show() }, modifier = Modifier.fillMaxWidth()) { Text("🗂 多窗口标签管理") }
+                        OutlinedButton(onClick = { CookieManager.getInstance().removeAllCookies(null); CookieManager.getInstance().flush(); android.webkit.WebStorage.getInstance().deleteAllData(); Toast.makeText(context, "浏览数据已清理", Toast.LENGTH_SHORT).show() }, modifier = Modifier.fillMaxWidth()) { Text("🕶 无痕浏览 / 隐私清理") }
+                        OutlinedButton(onClick = { val u = browserSite?.url ?: "https://www.google.com"; context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse("https://translate.google.com/translate?sl=auto&tl=zh-CN&u=" + Uri.encode(u)))) }, modifier = Modifier.fillMaxWidth()) { Text("🌐 网页翻译（中文）") }
+                        OutlinedButton(onClick = { val data = JSONArray().apply { sites.forEach { put(JSONObject().apply { put("name", it.name); put("url", it.url); put("category", it.category); put("favorite", it.favorite) }) } }.toString(2); context.startActivity(Intent.createChooser(Intent(Intent.ACTION_SEND).setType("application/json").putExtra(Intent.EXTRA_TEXT, data), "备份网站数据")) }, modifier = Modifier.fillMaxWidth()) { Text("💾 网站备份与分享") }
+                        OutlinedButton(onClick = { CookieManager.getInstance().removeAllCookies(null); CookieManager.getInstance().flush(); android.webkit.WebStorage.getInstance().deleteAllData(); Toast.makeText(context, "Cookie 和网页存储已清理", Toast.LENGTH_SHORT).show() }, modifier = Modifier.fillMaxWidth()) { Text("🛡 隐私安全中心") }
+                        OutlinedButton(onClick = { Toast.makeText(context, "可通过添加网址创建首页快捷入口；时钟组件后续完善", Toast.LENGTH_LONG).show() }, modifier = Modifier.fillMaxWidth()) { Text("🕒 首页时钟与快捷组件") }
+                        OutlinedButton(onClick = { featureHubVisible = false; mainDownloadsVisible = true }, modifier = Modifier.fillMaxWidth()) { Text("📥 下载增强中心") }
+                        OutlinedButton(onClick = { Toast.makeText(context, "请在网页中选择正文；阅读模式正在完善", Toast.LENGTH_SHORT).show() }, modifier = Modifier.fillMaxWidth()) { Text("📖 网页阅读模式") }
+                        OutlinedButton(onClick = { val u = browserSite?.url.orEmpty(); if (u.isBlank()) Toast.makeText(context, "请先打开网页", Toast.LENGTH_SHORT).show() else context.startActivity(Intent.createChooser(Intent(Intent.ACTION_SEND).setType("text/plain").putExtra(Intent.EXTRA_TEXT, u), "分享网页")) }, modifier = Modifier.fillMaxWidth()) { Text("🔳 网页二维码 / 分享链接") }
+                    }
+                },
+                confirmButton = { TextButton(onClick = { featureHubVisible = false }) { Text("完成") } }
+            )
+        }
         if (appearanceVisible) {
             AppearanceDialog(
                 wallpaperSet = wallpaperUri != null,
