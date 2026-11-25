@@ -927,6 +927,21 @@ private fun expandVpnImport(raw: String): List<String> {
 private fun VpnLinksDialog(links: List<String>, onSave: (List<String>) -> Unit, onDismiss: () -> Unit) {
     val context = LocalContext.current
     var importText by remember { mutableStateOf("") }
+    val configPicker = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
+        if (uri != null) {
+            try {
+                val content = context.contentResolver.openInputStream(uri)?.bufferedReader()?.use { it.readText() }.orEmpty()
+                if (content.isNotBlank()) {
+                    importText = listOf(importText, content).filter { it.isNotBlank() }.joinToString("\n")
+                    Toast.makeText(context, "配置文件已载入，点击导入保存", Toast.LENGTH_SHORT).show()
+                } else {
+                    Toast.makeText(context, "文件内容为空", Toast.LENGTH_SHORT).show()
+                }
+            } catch (e: Exception) {
+                Toast.makeText(context, "读取失败：${e.message}", Toast.LENGTH_LONG).show()
+            }
+        }
+    }
     var filter by remember { mutableStateOf("") }
     var showHelp by remember { mutableStateOf(false) }
     val imported = remember(importText) { expandVpnImport(importText) }
@@ -946,6 +961,14 @@ private fun VpnLinksDialog(links: List<String>, onSave: (List<String>) -> Unit, 
                     minLines = 3,
                     maxLines = 6
                 )
+                OutlinedButton(
+                    onClick = { configPicker.launch(arrayOf("application/json", "text/*", "application/octet-stream")) },
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Icon(Icons.Default.FolderOpen, contentDescription = null)
+                    Spacer(Modifier.width(6.dp))
+                    Text("从文件选择 JSON / 订阅文件")
+                }
                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                     Button(
                         onClick = {
