@@ -85,8 +85,25 @@ private const val KEY_ICON_STYLE = "icon_style"
 private const val KEY_ADULT_SITES = "adult_sites"
 private const val KEY_ADULT_PIN_HASH = "adult_pin_hash"
 private val adDomains = setOf("doubleclick.net", "googlesyndication.com", "googleadservices.com", "adnxs.com", "taboola.com", "outbrain.com", "criteo.com", "amazon-adsystem.com", "scorecardresearch.com", "adsafeprotected.com", "adservice.google.com")
-private val categories = listOf("全部", "常用", "工具", "购物", "学习", "其他")
+private val categories = listOf("全部", "常用", "工具", "购物", "学习", "成人影视", "福利姬", "写真", "其他")
 private val themeColors = listOf(Color(0xFF3157D5), Color(0xFF16856B), Color(0xFF8B50B5), Color(0xFFE07835))
+
+private val homepageAdultShortcuts = listOf(
+    Site(name = "Pornhub", url = "https://www.pornhub.com/", category = "成人影视"),
+    Site(name = "XVideos", url = "https://www.xvideos.com/", category = "成人影视"),
+    Site(name = "XNXX", url = "https://www.xnxx.com/", category = "成人影视"),
+    Site(name = "xHamster", url = "https://xhamster.com/", category = "成人影视"),
+    Site(name = "YouPorn", url = "https://www.youporn.com/", category = "成人影视"),
+    Site(name = "RedTube", url = "https://www.redtube.com/", category = "成人影视"),
+    Site(name = "Chaturbate", url = "https://chaturbate.com/", category = "成人影视"),
+    Site(name = "Stripchat", url = "https://stripchat.com/", category = "成人影视"),
+    Site(name = "OnlyFans", url = "https://onlyfans.com/", category = "福利姬"),
+    Site(name = "Fansly", url = "https://fansly.com/", category = "福利姬"),
+    Site(name = "Patreon 18+", url = "https://www.patreon.com/", category = "福利姬"),
+    Site(name = "ASEC 成人创作者", url = "https://www.aseclover.com/", category = "福利姬"),
+    Site(name = "ARTGRAVIA", url = "https://www.artgravia.com/", category = "写真"),
+    Site(name = "DJAWA Photo", url = "https://djawaphoto.com/", category = "写真")
+)
 
 private fun loadCustomAdDomains(context: Context): List<String> {
     val raw = context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
@@ -218,7 +235,17 @@ private fun saveSites(context: Context, sites: List<Site>) {
 @Composable
 private fun WebBoxApp() {
     val context = LocalContext.current
-    var sites by remember { mutableStateOf(loadSites(context)) }
+    var sites by remember {
+        mutableStateOf(run {
+            val saved = loadSites(context)
+            val additions = homepageAdultShortcuts.filter { preset ->
+                saved.none { it.url.trimEnd('/').equals(preset.url.trimEnd('/'), ignoreCase = true) }
+            }
+            (saved + additions).also { merged ->
+                if (additions.isNotEmpty()) saveSites(context, merged)
+            }
+        })
+    }
     var search by remember { mutableStateOf("") }
     var homeAddress by remember { mutableStateOf("") }
     var selectedCategory by remember { mutableStateOf("全部") }
