@@ -89,20 +89,16 @@ private val categories = listOf("全部", "常用", "工具", "购物", "学习"
 private val themeColors = listOf(Color(0xFF3157D5), Color(0xFF16856B), Color(0xFF8B50B5), Color(0xFFE07835))
 
 private val homepageAdultShortcuts = listOf(
-    Site(name = "Pornhub", url = "https://www.pornhub.com/", category = "成人影视"),
-    Site(name = "XVideos", url = "https://www.xvideos.com/", category = "成人影视"),
-    Site(name = "XNXX", url = "https://www.xnxx.com/", category = "成人影视"),
-    Site(name = "xHamster", url = "https://xhamster.com/", category = "成人影视"),
-    Site(name = "YouPorn", url = "https://www.youporn.com/", category = "成人影视"),
-    Site(name = "RedTube", url = "https://www.redtube.com/", category = "成人影视"),
-    Site(name = "Chaturbate", url = "https://chaturbate.com/", category = "成人影视"),
-    Site(name = "Stripchat", url = "https://stripchat.com/", category = "成人影视"),
-    Site(name = "OnlyFans", url = "https://onlyfans.com/", category = "福利姬"),
-    Site(name = "Fansly", url = "https://fansly.com/", category = "福利姬"),
-    Site(name = "Patreon 18+", url = "https://www.patreon.com/", category = "福利姬"),
-    Site(name = "ASEC 成人创作者", url = "https://www.aseclover.com/", category = "福利姬"),
-    Site(name = "ARTGRAVIA", url = "https://www.artgravia.com/", category = "写真"),
-    Site(name = "DJAWA Photo", url = "https://djawaphoto.com/", category = "写真")
+    Site(name = "Pornhub（免费广告版）", url = "https://www.pornhub.com/", category = "成人影视"),
+    Site(name = "XVideos（免费浏览）", url = "https://www.xvideos.com/", category = "成人影视"),
+    Site(name = "XNXX（免费浏览）", url = "https://www.xnxx.com/", category = "成人影视"),
+    Site(name = "xHamster（免费浏览）", url = "https://xhamster.com/", category = "成人影视"),
+    Site(name = "YouPorn（免费浏览）", url = "https://www.youporn.com/", category = "成人影视"),
+    Site(name = "RedTube（免费浏览）", url = "https://www.redtube.com/", category = "成人影视"),
+    Site(name = "Chaturbate（免费公开直播）", url = "https://chaturbate.com/", category = "成人影视"),
+    Site(name = "Stripchat（免费公开直播）", url = "https://stripchat.com/", category = "成人影视"),
+    Site(name = "HerFans（免费内容区）", url = "https://herfans.com/browse", category = "福利姬"),
+    Site(name = "Cheetraview（免费写真预览）", url = "https://cheetraview.com/", category = "写真")
 )
 
 private fun loadCustomAdDomains(context: Context): List<String> {
